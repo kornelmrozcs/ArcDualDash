@@ -1,0 +1,45 @@
+﻿# Build / temp
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+.vscode/
+*.VC.db
+*.VC.opendb
+
+# Unreal user files
+*.suo
+*.sln.ide
+*.user
+*.userprefs
+*.log
+*.tlog
+
+# Platform-specific
+*.opensdf
+*.sdf
+*.suo
+*.pdb
+*.ipch
+
+# Backups & autosaves
+*.tmp
+*_BuiltData.uasset
+*.backup
+*.orig
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS/JetBrains
+*.VC.db
+*.VC.opendb
+.idea/
+*.iml
+
+# Packaging output
+Build/
+Saved/AutoScreenshot/
