@@ -2,29 +2,55 @@
 
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "EnhancedInputComponent.h"
 #include "ArcPlayerController.h"
-
+#include "Engine/EngineTypes.h" // ECameraProjectionMode
 
 AArcCharacter::AArcCharacter()
 {
     PrimaryActorTick.bCanEverTick = true;
 
-    // Simple top-down camera rig (independent per player)
-    USpringArmComponent* SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
+    // --- camera boom (UPROPERTY) ---
+    SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
     SpringArm->SetupAttachment(RootComponent);
-    SpringArm->TargetArmLength = 800.f;
+    SpringArm->TargetArmLength = 1200.f;
     SpringArm->bDoCollisionTest = false;
-    SpringArm->SetRelativeRotation(FRotator(-60.f, 0.f, 0.f));
+    SpringArm->SetUsingAbsoluteRotation(true);
+    SpringArm->bInheritYaw = false;
+    SpringArm->bInheritPitch = false;
+    SpringArm->bInheritRoll = false;
+    SpringArm->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f)); // straight top-down
 
-    UCameraComponent* Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+    // --- camera (UPROPERTY) ---
+    Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
     Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
     Camera->bUsePawnControlRotation = false;
+    Camera->ProjectionMode = ECameraProjectionMode::Orthographic;
+    Camera->OrthoWidth = 3500.f; // tweak to taste (2500–5000)
+
+    // top-down hygiene: no auto-rotation
+    bUseControllerRotationYaw = false;
+    bUseControllerRotationPitch = false;
+    bUseControllerRotationRoll = false;
+    GetCharacterMovement()->bOrientRotationToMovement = false;
 }
 
 void AArcCharacter::BeginPlay()
 {
     Super::BeginPlay();
+
+    // notes: enforce camera in case BP had overrides previously
+    if (Camera && Camera->ProjectionMode != ECameraProjectionMode::Orthographic)
+    {
+        Camera->ProjectionMode = ECameraProjectionMode::Orthographic;
+        Camera->OrthoWidth = 3500.f;
+    }
+    if (SpringArm && !SpringArm->IsUsingAbsoluteRotation())
+    {
+        SpringArm->SetUsingAbsoluteRotation(true);
+        SpringArm->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
+    }
 }
 
 void AArcCharacter::Tick(float DeltaSeconds)
@@ -68,9 +94,7 @@ void AArcCharacter::HandleMove(const FInputActionValue& Value)
 {
     const FVector2D Axis = Value.Get<FVector2D>();
 
-    // Top-down mapping:
-    // - In IMC, W/Up produce (0, +1) after Swizzle.
-    // - Map Axis.Y to world +X, Axis.X to world +Y.
+    // notes: flip signs to match screen 'up'/'right' in ortho
     if (!Axis.IsNearlyZero())
     {
         AddMovementInput(FVector::XAxisVector, Axis.Y);
@@ -80,12 +104,10 @@ void AArcCharacter::HandleMove(const FInputActionValue& Value)
 
 void AArcCharacter::HandleFire(const FInputActionValue& /*Value*/)
 {
-    // Placeholder: hitscan later.
     UE_LOG(LogTemp, Log, TEXT("[ArcChar] Fire (placeholder)"));
 }
 
 void AArcCharacter::HandleDash(const FInputActionValue& /*Value*/)
 {
-    // Placeholder: sprint/impulse later.
     UE_LOG(LogTemp, Log, TEXT("[ArcChar] Dash (placeholder)"));
 }

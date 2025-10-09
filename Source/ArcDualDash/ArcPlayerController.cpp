@@ -7,13 +7,11 @@
 #include "GameFramework/Character.h"
 #include "ArcCharacter.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogArcInput, Log, All);
-
-// --- Load assets in ctor (paths copied from Content Browser References) ---
+// notes: load assets in ctor (paths copied from Content Browser References)
 AArcPlayerController::AArcPlayerController(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
-    // Base IMCs
+    // --- Base IMCs (P1/P2) ---
     {
         static ConstructorHelpers::FObjectFinder<UInputMappingContext> IMC1Ref(
             TEXT("/Game/Input/Contexts/IMC_Player1.IMC_Player1"));
@@ -24,7 +22,7 @@ AArcPlayerController::AArcPlayerController(const FObjectInitializer& ObjectIniti
         if (IMC2Ref.Succeeded()) { IMC_Player2 = IMC2Ref.Object; }
     }
 
-    // Base Actions
+    // --- Base Actions ---
     {
         static ConstructorHelpers::FObjectFinder<UInputAction> MoveRef(
             TEXT("/Game/Input/Actions/IA_Move.IA_Move"));
@@ -39,7 +37,7 @@ AArcPlayerController::AArcPlayerController(const FObjectInitializer& ObjectIniti
         if (DashRef.Succeeded()) { IA_Dash = DashRef.Object; }
     }
 
-    // Keyboard proxy for P2 – IMC + IA_*_P2 (only used on ControllerId==0)
+    // --- Keyboard proxy for P2 (used only on ControllerId==0) ---
     {
         static ConstructorHelpers::FObjectFinder<UInputMappingContext> ProxyIMCRef(
             TEXT("/Game/Input/Contexts/IMC_KeyboardProxy_P2.IMC_KeyboardProxy_P2"));
@@ -63,7 +61,7 @@ void AArcPlayerController::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Purpose: attach the right IMC to the right LocalPlayer (and add proxy on PC#0).
+    // notes: attach the right IMC to the right LocalPlayer; add proxy on ControllerId==0
     if (ULocalPlayer* LP = GetLocalPlayer())
     {
         if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
@@ -71,10 +69,10 @@ void AArcPlayerController::BeginPlay()
         {
             const int32 ControllerId = LP->GetControllerId();
 
-            // Safety: clear stale contexts (PIE restarts can duplicate)
+            // notes: clear stale contexts (PIE restarts can duplicate)
             Subsystem->ClearAllMappings();
 
-            // Choose P1/P2 IMC based on ControllerId
+            // --- Base IMC per LocalPlayer ---
             if (ControllerId == 0 && IMC_Player1)
             {
                 Subsystem->AddMappingContext(IMC_Player1, /*Priority*/0);
@@ -93,8 +91,7 @@ void AArcPlayerController::BeginPlay()
 
                 if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
                 {
-                    // NOTE: No lambdas here. Bind to UFUNCTION/Member methods (5.4-friendly).
-
+                    // notes: bind to member methods (no lambdas; UE5.4-friendly)
                     if (IA_Move_P2)
                     {
                         EIC->BindAction(IA_Move_P2, ETriggerEvent::Triggered, this, &AArcPlayerController::OnP2Move);
@@ -114,18 +111,17 @@ void AArcPlayerController::BeginPlay()
         }
     }
 
-    // UX: game-only input, no cursor
+    // notes: game-only input, hide cursor
     FInputModeGameOnly Mode;
     SetInputMode(Mode);
     bShowMouseCursor = false;
 }
 
-// --- Proxy: handlers bound to IA_*_P2, then routed to Player#1 pawn ---
+// --- Proxy: handlers bound to IA_*_P2, then routed to Player #1 pawn ---
 
 void AArcPlayerController::OnP2Move(const FInputActionValue& Value)
 {
     Proxy_P2_Move(Value.Get<FVector2D>());
-
 }
 
 void AArcPlayerController::OnP2Fire(const FInputActionValue& /*Value*/)
@@ -146,7 +142,7 @@ void AArcPlayerController::Proxy_P2_Move(const FVector2D& Axis)
         {
             if (!Axis.IsNearlyZero())
             {
-                // Same mapping as character handler: Y -> +X, X -> +Y
+                // notes: same mapping as character handler: Y -> +X, X -> +Y (signs handled in pawn)
                 P2Pawn->AddMovementInput(FVector::XAxisVector, Axis.Y);
                 P2Pawn->AddMovementInput(FVector::YAxisVector, Axis.X);
             }
@@ -158,12 +154,12 @@ void AArcPlayerController::Proxy_P2_Fire()
 {
     if (APlayerController* PC2 = UGameplayStatics::GetPlayerController(this, 1))
         if (AArcCharacter* P2Pawn = Cast<AArcCharacter>(PC2->GetPawn()))
-            P2Pawn->HandleFire(FInputActionValue()); // reuse placeholder
+            P2Pawn->HandleFire(FInputActionValue()); // notes: reuse placeholder
 }
 
 void AArcPlayerController::Proxy_P2_Dash()
 {
     if (APlayerController* PC2 = UGameplayStatics::GetPlayerController(this, 1))
         if (AArcCharacter* P2Pawn = Cast<AArcCharacter>(PC2->GetPawn()))
-            P2Pawn->HandleDash(FInputActionValue()); // reuse placeholder
+            P2Pawn->HandleDash(FInputActionValue()); // notes: reuse placeholder
 }
