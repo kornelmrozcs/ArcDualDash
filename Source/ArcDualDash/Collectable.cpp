@@ -49,7 +49,7 @@ void ACollectable::BeginPlay()
 
     // bind overlaps
     Sphere->OnComponentBeginOverlap.AddDynamic(this, &ACollectable::OnSphereBeginOverlap);
-    Box->OnComponentBeginOverlap.AddDynamic(this, &ACollectable::OnBoxBeginOverlap);
+    //Box->OnComponentBeginOverlap.AddDynamic(this, &ACollectable::OnBoxBeginOverlap);
     OnActorBeginOverlap.AddDynamic(this, &ACollectable::OnActorOverlap);
 
     // debug dump of settings
@@ -66,7 +66,7 @@ void ACollectable::BeginPlay()
     */
     // force overlap evaluation now
     Sphere->UpdateOverlaps();
-    Box->UpdateOverlaps();
+    //Box->UpdateOverlaps();
     UpdateOverlaps(false);
 
     /*// TEMP: snap first collectable onto Player0 to guarantee intersection

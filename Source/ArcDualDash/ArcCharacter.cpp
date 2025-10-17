@@ -63,6 +63,10 @@ void AArcCharacter::BeginPlay()
     Cap->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);   // floor etc.
     Cap->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap); // collectable sphere/box
     Cap->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);   // traces if needed
+    // notes: make players block each other (Pawn vs Pawn)
+    Cap->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+
+
     Cap->UpdateOverlaps(); // recalc now
 
 
