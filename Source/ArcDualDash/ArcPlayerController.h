@@ -3,6 +3,8 @@
 // Engine
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Blueprint/UserWidget.h"
+
 
 // Enhanced Input types used in this header
 #include "InputActionValue.h"
@@ -60,4 +62,9 @@ public:
     void Proxy_P2_Move(const FVector2D& Axis);
     void Proxy_P2_Fire();
     void Proxy_P2_Dash();
+
+    // notes: timer UI per player (set in BP_ArcPlayerController)
+    UPROPERTY(EditDefaultsOnly, Category = "UI")
+    TSubclassOf<class UUserWidget> TimerWidgetClass;
+
 };

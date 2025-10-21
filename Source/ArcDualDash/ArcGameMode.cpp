@@ -1,5 +1,6 @@
 #include "ArcGameMode.h"
 #include "ArcPlayerState.h"   // notes: for PlayerStateClass = AArcPlayerState::StaticClass()
+#include "ArcGameState.h"
 
 #include "Kismet/GameplayStatics.h" // UGameplayStatics::CreatePlayer
 #include "Engine/World.h"
@@ -9,6 +10,8 @@ AArcGameMode::AArcGameMode()
     // Intentionally left empty. We bind defaults via Project Settings to keep BP flexibility.
 
     PlayerStateClass = AArcPlayerState::StaticClass();
+    GameStateClass = AArcGameState::StaticClass();  // notes: use count-up timer state
+
 }
 
 void AArcGameMode::BeginPlay()

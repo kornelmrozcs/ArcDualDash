@@ -8,7 +8,17 @@ public class ArcDualDash : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+		"Core",
+		"CoreUObject",
+		"Engine",
+		"InputCore",
+		"EnhancedInput",
+		"UMG",        // <-- UI widgets
+		"Slate",      // <-- required by UMG
+		"SlateCore"   // <-- required by UMG
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

@@ -109,6 +109,14 @@ void AArcPlayerController::BeginPlay()
                 }
             }
         }
+        // notes: show timer widget in this player's viewport
+if (TimerWidgetClass)
+{
+    if (UUserWidget* W = CreateWidget<UUserWidget>(this, TimerWidgetClass))
+    {
+        W->AddToPlayerScreen(/*ZOrder=*/100);
+    }
+}
     }
 
     // notes: game-only input, hide cursor
