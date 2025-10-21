@@ -160,6 +160,76 @@ void AArcPlayerController::BeginPlay()
 
         GetWorldTimerManager().SetTimer(H, D, /*Rate=*/0.10f, /*bLoop=*/false);
     }
+    // --- Score HUD per player (mirrors timer pattern) ---
+// notes: spawn after a tiny delay so LocalPlayer/GVC are ready (same as timer)
+    {
+        FTimerHandle H;
+        FTimerDelegate D;
+        D.BindLambda([this]()
+            {
+                if (!ScoreWidgetClass)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[PC] ScoreWidgetClass is NULL on %s"), *GetName());
+                    return;
+                }
+
+                UUserWidget* W = CreateWidget<UUserWidget>(GetWorld(), ScoreWidgetClass);
+                if (!W)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[PC] CreateWidget(Score) failed on %s"), *GetName());
+                    return;
+                }
+
+                W->SetOwningPlayer(this);
+
+                if (UGameViewportClient* GVC = GetWorld()->GetGameViewport())
+                {
+                    if (ULocalPlayer* LP2 = GetLocalPlayer())
+                    {
+                        // UE 5.4: returns void
+                        GVC->AddViewportWidgetForPlayer(LP2, W->TakeWidget(), /*ZOrder=*/90);
+                        UE_LOG(LogTemp, Log, TEXT("[PC] Score AddViewportWidgetForPlayer done for %s"), *GetName());
+                    }
+                    else
+                    {
+                        // notes: fallback (shouldn't happen in split-screen)
+                        W->AddToPlayerScreen(90);
+                        UE_LOG(LogTemp, Log, TEXT("[PC] Score Fallback AddToPlayerScreen for %s"), *GetName());
+                    }
+                }
+
+                // notes: keep reference so GC won't collect the widget
+                ScoreWidgetInstance = W;
+
+                // notes: force per-player placement in viewport
+                int32 ControllerIdForLayout = 0;
+                if (ULocalPlayer* LPx = GetLocalPlayer())
+                {
+                    ControllerIdForLayout = LPx->GetControllerId();
+                }
+
+                if (ControllerIdForLayout == 0)
+                {
+                    // P1: top-left
+                    W->SetAnchorsInViewport(FAnchors(0.f, 0.f, 0.f, 0.f));
+                    W->SetAlignmentInViewport(FVector2D(0.f, 0.f));
+                    W->SetPositionInViewport(FVector2D(16.f, 16.f), false);
+                }
+                else
+                {
+                    // P2: top-right
+                    W->SetAnchorsInViewport(FAnchors(1.f, 0.f, 1.f, 0.f));
+                    W->SetAlignmentInViewport(FVector2D(1.f, 0.f));
+                    W->SetPositionInViewport(FVector2D(-16.f, 16.f), false);
+                }
+
+                UE_LOG(LogTemp, Log, TEXT("[PC] Score HUD ready for %s (ControllerId=%d)"),
+                    *GetName(), ControllerIdForLayout);
+            });
+
+        GetWorldTimerManager().SetTimer(H, D, /*Rate=*/0.10f, /*bLoop=*/false);
+    }
+
 
     // notes: game-only input, hide cursor
     FInputModeGameOnly Mode;

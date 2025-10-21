@@ -69,4 +69,13 @@ public:
     // notes: keep a reference so GC won't collect it
     UPROPERTY()
     class UUserWidget* TimerWidgetInstance = nullptr;
+
+    // notes: score UI per player (set in BP_ArcPlayerController)
+    UPROPERTY(EditDefaultsOnly, Category = "UI")
+    TSubclassOf<class UUserWidget> ScoreWidgetClass;
+
+    // notes: keep a reference so GC won't collect it
+    UPROPERTY()
+    class UUserWidget* ScoreWidgetInstance = nullptr;
+
 };
