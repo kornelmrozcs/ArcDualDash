@@ -197,3 +197,21 @@ void AArcCharacter::EndTimedPowerUp()
     }
     UE_LOG(LogTemp, Log, TEXT("[PowerUp] Speed boost ended"));
 }
+
+int32 AArcCharacter::AddHealth(int32 Delta)
+{
+    // notes: clamp to [0, MaxHealth]
+    const int32 Old = Health;
+    Health = FMath::Clamp(Health + Delta, 0, MaxHealth);
+    UE_LOG(LogTemp, Log, TEXT("[Stats] Health: %d -> %d (Delta=%d)"), Old, Health, Delta);
+    return Health;
+}
+
+int32 AArcCharacter::AddAmmo(int32 Delta)
+{
+    // notes: clamp to [0, MaxAmmo]
+    const int32 Old = Ammo;
+    Ammo = FMath::Clamp(Ammo + Delta, 0, MaxAmmo);
+    UE_LOG(LogTemp, Log, TEXT("[Stats] Ammo: %d -> %d (Delta=%d)"), Old, Ammo, Delta);
+    return Ammo;
+}

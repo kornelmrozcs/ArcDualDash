@@ -1,41 +1,30 @@
 #include "Collectable.h"
 #include "ArcCharacter.h"
-#include "DrawDebugHelpers.h"
-#include "Kismet/GameplayStatics.h"
+#include "ArcPlayerState.h"
+#include "Components/CapsuleComponent.h"
 
 ACollectable::ACollectable()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // safety: make sure actor can collide at all
-    SetActorEnableCollision(true); // notes: actor-level flag
+    // notes: actor-level collision enabled so components can query
+    SetActorEnableCollision(true);
 
     // --- root ---
     RootComp = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     SetRootComponent(RootComp);
 
-    // sphere trigger
+    // --- trigger sphere (overlap with Pawn only) ---
     Sphere = CreateDefaultSubobject<USphereComponent>(TEXT("Sphere"));
     Sphere->SetupAttachment(RootComp);
-    Sphere->InitSphereRadius(120.f);
+    Sphere->InitSphereRadius(100.f); // tune in BP via component details
     Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-    Sphere->SetCollisionObjectType(ECC_WorldDynamic);         // ok
-    Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);     // hard reset
+    Sphere->SetCollisionObjectType(ECC_WorldDynamic);
+    Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);   // notes: hard reset
     Sphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
     Sphere->SetGenerateOverlapEvents(true);
-    /*
-    // box trigger (backup)
-    Box = CreateDefaultSubobject<UBoxComponent>(TEXT("Box"));
-    Box->SetupAttachment(RootComp);
-    Box->SetBoxExtent(FVector(120.f));
-    Box->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-    Box->SetCollisionObjectType(ECC_WorldDynamic);
-    Box->SetCollisionResponseToAllChannels(ECR_Ignore);
-    Box->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
-    Box->SetGenerateOverlapEvents(true);
-    */
 
-    // --- visual mesh ---
+    // --- visual mesh (no collision) ---
     Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StaticMesh"));
     Mesh->SetupAttachment(RootComp);
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -47,105 +36,91 @@ void ACollectable::BeginPlay()
 {
     Super::BeginPlay();
 
-    // bind overlaps
-    Sphere->OnComponentBeginOverlap.AddDynamic(this, &ACollectable::OnSphereBeginOverlap);
-    //Box->OnComponentBeginOverlap.AddDynamic(this, &ACollectable::OnBoxBeginOverlap);
-    OnActorBeginOverlap.AddDynamic(this, &ACollectable::OnActorOverlap);
-
-    // debug dump of settings
-    UE_LOG(LogTemp, Log, TEXT("[Collectable] BeginPlay: Sphere R=%.1f, CE=%d, Obj=%d, PawnResp=%d, Events=%d"),
-        Sphere->GetUnscaledSphereRadius(),
-        (int32)Sphere->GetCollisionEnabled(),
-        (int32)Sphere->GetCollisionObjectType(),
-        (int32)Sphere->GetCollisionResponseToChannel(ECC_Pawn),
-        Sphere->GetGenerateOverlapEvents());
-    /*
-    // draw debug volume so I can SEE the trigger in game
-    DrawDebugSphere(GetWorld(), Sphere->GetComponentLocation(), Sphere->GetUnscaledSphereRadius(), 24, FColor::Purple, false, 9999.f, 0, 2.f);
-    DrawDebugBox(GetWorld(), Box->GetComponentLocation(), Box->GetUnscaledBoxExtent(), FColor::Cyan, false, 9999.f, 0, 2.f);
-    */
-    // force overlap evaluation now
-    Sphere->UpdateOverlaps();
-    //Box->UpdateOverlaps();
-    UpdateOverlaps(false);
-
-    /*// TEMP: snap first collectable onto Player0 to guarantee intersection
-    static bool bDidSnapOnce = false;
-    if (!bDidSnapOnce)
+    // notes: hard guards to avoid crashes when BP/instance lost components
+    if (!ensureAlwaysMsgf(IsValid(Sphere), TEXT("[Collectable] Sphere is null on %s"), *GetName()))
     {
-        if (APlayerController* PC0 = GetWorld()->GetFirstPlayerController())
-        {
-            if (APawn* P0 = PC0->GetPawn())
-            {
-                FVector P = P0->GetActorLocation();
-                SetActorLocation(P + FVector(0, 0, -20.0f)); // notes: cut the capsule for sure
-                UE_LOG(LogTemp, Warning, TEXT("[Collectable] TEMP snap to Player0 @ %s"), *GetActorLocation().ToCompactString());
-                DebugLogDistanceToPlayer(P0);
-                Sphere->UpdateOverlaps();
-                Box->UpdateOverlaps();
-                UpdateOverlaps(false);
-            }
-        }
-        bDidSnapOnce = true;
-    }*/
+        return;
+    }
+    if (Mesh && Mesh->GetCollisionEnabled() != ECollisionEnabled::NoCollision)
+    {
+        // notes: visual should never block/overlap – enforce once
+        Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+
+    Sphere->SetGenerateOverlapEvents(true);
+    Sphere->OnComponentBeginOverlap.AddDynamic(this, &ACollectable::OnSphereBeginOverlap);
+
+    // notes: recompute initial overlaps (safe; sometimes helpful after editor reloads)
+    Sphere->UpdateOverlaps();
+    UpdateOverlaps(false);
 }
 
 void ACollectable::OnSphereBeginOverlap(UPrimitiveComponent* /*OverlappedComp*/, AActor* OtherActor,
     UPrimitiveComponent* /*OtherComp*/, int32 /*OtherBodyIndex*/, bool /*bFromSweep*/,
     const FHitResult& /*SweepResult*/)
 {
-    if (APawn* Pawn = Cast<APawn>(OtherActor))
+    // notes: only react to Pawns (players/bots)
+    APawn* Pawn = Cast<APawn>(OtherActor);
+    if (!Pawn)
     {
-        if (AArcCharacter* ArcChar = Cast<AArcCharacter>(Pawn))
-        {
-            // notes: trigger 5s boost; tune in BP via BoostedMaxWalkSpeed
-            ArcChar->StartTimedPowerUp(5.f);
-        }
-
-        UE_LOG(LogTemp, Log, TEXT("[Collectable] picked by %s"), *OtherActor->GetName());
-        ConsumePickup();
+        return;
     }
 
-
-}
-
-void ACollectable::OnBoxBeginOverlap(UPrimitiveComponent* /*OverlappedComp*/, AActor* OtherActor,
-    UPrimitiveComponent* /*OtherComp*/, int32 /*OtherBodyIndex*/, bool /*bFromSweep*/,
-    const FHitResult& /*SweepResult*/)
-{
-    if (APawn* Pawn = Cast<APawn>(OtherActor))
+    // optional: award score to this pawn's PlayerState if present
+    if (APlayerState* PS = Pawn->GetPlayerState())
     {
-        if (AArcCharacter* ArcChar = Cast<AArcCharacter>(Pawn))
+        if (AArcPlayerState* ArcPS = Cast<AArcPlayerState>(PS))
         {
-            // notes: trigger 5s boost; tune in BP via BoostedMaxWalkSpeed
-            ArcChar->StartTimedPowerUp(5.f);
+            ArcPS->AddScoreInt(ScoreValue);
         }
-
-        UE_LOG(LogTemp, Log, TEXT("[Collectable] picked by %s"), *OtherActor->GetName());
-        ConsumePickup();
+        else
+        {
+            // notes: even if not our custom PS, try to bump base float score for safety
+            const float NewScore = PS->GetScore() + static_cast<float>(ScoreValue);
+            PS->SetScore(NewScore);
+        }
     }
 
+    // notes: if it's our character, apply effects (boost etc.)
+    if (AArcCharacter* ArcChar = Cast<AArcCharacter>(Pawn))
+    {
+        ApplyEffects(ArcChar);
+    }
 
+    UE_LOG(LogTemp, Log, TEXT("[Collectable] picked by %s (Score +%d, Boost=%s, Dur=%.1fs)"),
+        *GetNameSafe(OtherActor), ScoreValue, bGivesSpeedBoost ? TEXT("Yes") : TEXT("No"), BoostDuration);
+
+    ConsumePickup();
 }
 
-void ACollectable::OnActorOverlap(AActor* /*OverlappedActor*/, AActor* OtherActor)
+void ACollectable::ApplyEffects_Implementation(AArcCharacter* Picker)
 {
-    UE_LOG(LogTemp, Verbose, TEXT("[Collectable] ACTOR overlap with %s"), *GetNameSafe(OtherActor));
+    if (!Picker) return;
+
+    // notes: o speed boost
+    if (bGivesSpeedBoost)
+    {
+        Picker->StartTimedPowerUp(BoostDuration);
+    }
+
+    // notes:  health
+    if (HealthAmount != 0)
+    {
+        Picker->AddHealth(HealthAmount);
+    }
+
+    // notes:  ammo
+    if (AmmoAmount != 0)
+    {
+        Picker->AddAmmo(AmmoAmount);
+    }
 }
+
 
 void ACollectable::ConsumePickup()
 {
+    // notes: hide + disable collisions and remove shortly
     SetActorEnableCollision(false);
     SetActorHiddenInGame(true);
     SetLifeSpan(0.1f);
-}
-
-void ACollectable::DebugLogDistanceToPlayer(APawn* Pawn) const
-{
-    if (!Pawn) return;
-    const FVector A = Pawn->GetActorLocation();
-    const FVector B = GetActorLocation();
-    const float Dist = FVector::Dist(A, B);
-    UE_LOG(LogTemp, Log, TEXT("[Collectable] Dist to Player0: %.1f (A=%s, B=%s)"),
-        Dist, *A.ToCompactString(), *B.ToCompactString());
 }

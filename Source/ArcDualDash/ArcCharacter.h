@@ -60,4 +60,25 @@ public:
 
     // notes: revert to base speed
     void EndTimedPowerUp();
+
+    // notes: simple health/ammo store so pickups can modify them
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stats")
+    int32 MaxHealth = 100;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+    int32 Health = 100;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stats")
+    int32 MaxAmmo = 100;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+    int32 Ammo = 0;
+
+    // notes: adjust with clamping; returns new value
+    UFUNCTION(BlueprintCallable, Category = "Stats")
+    int32 AddHealth(int32 Delta);
+
+    UFUNCTION(BlueprintCallable, Category = "Stats")
+    int32 AddAmmo(int32 Delta);
+
 };
