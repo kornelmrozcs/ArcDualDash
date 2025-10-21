@@ -3,7 +3,13 @@
 #include "EnhancedInputSubsystems.h"   // UEnhancedInputLocalPlayerSubsystem
 #include "EnhancedInputComponent.h"    // UEnhancedInputComponent
 #include "UObject/ConstructorHelpers.h"
+
+#include "Blueprint/UserWidget.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/LocalPlayer.h"
 #include "Kismet/GameplayStatics.h"
+#include "Components/CanvasPanelSlot.h"
+
 #include "GameFramework/Character.h"
 #include "ArcCharacter.h"
 
@@ -91,32 +97,68 @@ void AArcPlayerController::BeginPlay()
 
                 if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
                 {
-                    // notes: bind to member methods (no lambdas; UE5.4-friendly)
                     if (IA_Move_P2)
-                    {
                         EIC->BindAction(IA_Move_P2, ETriggerEvent::Triggered, this, &AArcPlayerController::OnP2Move);
-                    }
                     if (IA_Fire_P2)
-                    {
                         EIC->BindAction(IA_Fire_P2, ETriggerEvent::Started, this, &AArcPlayerController::OnP2Fire);
-                    }
                     if (IA_Dash_P2)
-                    {
                         EIC->BindAction(IA_Dash_P2, ETriggerEvent::Started, this, &AArcPlayerController::OnP2Dash);
-                    }
 
                     UE_LOG(LogTemp, Log, TEXT("[ArcPC] Proxy bindings for P2 added on ControllerId=0"));
                 }
             }
         }
-        // notes: show timer widget in this player's viewport
-if (TimerWidgetClass)
-{
-    if (UUserWidget* W = CreateWidget<UUserWidget>(this, TimerWidgetClass))
-    {
-        W->AddToPlayerScreen(/*ZOrder=*/100);
     }
-}
+
+    // notes: robust split-screen spawn: attach timer HUD to THIS local player's viewport
+    {
+        FTimerHandle H;
+        FTimerDelegate D;
+        D.BindLambda([this]()
+            {
+                if (!TimerWidgetClass)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[PC] TimerWidgetClass is NULL on %s"), *GetName());
+                    return;
+                }
+
+                UUserWidget* W = CreateWidget<UUserWidget>(GetWorld(), TimerWidgetClass);
+                if (!W)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[PC] CreateWidget failed on %s"), *GetName());
+                    return;
+                }
+
+                W->SetOwningPlayer(this);
+
+                if (UGameViewportClient* GVC = GetWorld()->GetGameViewport())
+                {
+                    if (ULocalPlayer* LP2 = GetLocalPlayer())
+                    {
+                        // UE 5.4: returns void
+                        GVC->AddViewportWidgetForPlayer(LP2, W->TakeWidget(), /*ZOrder=*/100);
+                        UE_LOG(LogTemp, Log, TEXT("[PC] AddViewportWidgetForPlayer done for %s"), *GetName());
+                    }
+                    else
+                    {
+                        // fallback (shouldn't happen in split-screen)
+                        W->AddToPlayerScreen(100);
+                        UE_LOG(LogTemp, Log, TEXT("[PC] Fallback AddToPlayerScreen for %s"), *GetName());
+                    }
+                }
+
+                // notes: keep reference to prevent GC
+                TimerWidgetInstance = W;
+
+                // notes: force top-center placement
+                W->SetAnchorsInViewport(FAnchors(0.5f, 0.f, 0.5f, 0.f));
+                W->SetAlignmentInViewport(FVector2D(0.5f, 0.f));
+                W->SetPositionInViewport(FVector2D(0.f, 12.f), false);
+
+                UE_LOG(LogTemp, Log, TEXT("[PC] Timer HUD ready for %s"), *GetName());
+            });
+
+        GetWorldTimerManager().SetTimer(H, D, /*Rate=*/0.10f, /*bLoop=*/false);
     }
 
     // notes: game-only input, hide cursor
@@ -124,6 +166,7 @@ if (TimerWidgetClass)
     SetInputMode(Mode);
     bShowMouseCursor = false;
 }
+
 
 // --- Proxy: handlers bound to IA_*_P2, then routed to Player #1 pawn ---
 

@@ -5,7 +5,6 @@
 #include "GameFramework/PlayerController.h"
 #include "Blueprint/UserWidget.h"
 
-
 // Enhanced Input types used in this header
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
@@ -67,4 +66,7 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "UI")
     TSubclassOf<class UUserWidget> TimerWidgetClass;
 
+    // notes: keep a reference so GC won't collect it
+    UPROPERTY()
+    class UUserWidget* TimerWidgetInstance = nullptr;
 };
