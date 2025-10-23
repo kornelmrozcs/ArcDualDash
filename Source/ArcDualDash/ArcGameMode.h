@@ -11,6 +11,8 @@ class ARCDUALDASH_API AArcGameMode : public AGameModeBase
 
 public:
     AArcGameMode();
+    // notes: pick per-player PlayerStart by Actor Tag (P1/P2) in local split-screen
+    virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 protected:
     virtual void BeginPlay() override;
 };
