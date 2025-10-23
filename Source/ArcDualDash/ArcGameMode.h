@@ -2,7 +2,7 @@
 
 // ============================================================================
 // ArcGameMode.h
-// notes: I handle split-screen setup and choose spawn points for each player.
+// notes: I handlee split-screen setup and choose spawn points for each player.
 //        Reason: I want both players auto-created and spawned on tagged starts.
 //        Used by: level (PlayerStarts with tags P1/P2), PlayerController (HUD). KM
 // ============================================================================

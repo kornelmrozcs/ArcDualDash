@@ -4,7 +4,7 @@
 //        - create LocalPlayer #2 for split-screen,
 //        - pick PlayerStart per player by tag,
 //        - leave HUD to PlayerControllers. KM
-// ============================================================================
+// ===========================================================================
 
 #include "ArcGameMode.h"
 
