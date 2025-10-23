@@ -1,19 +1,27 @@
+﻿// ============================================================================
+// ArcPlayerController.cpp
+// notes: Per-player input setup and per-viewport HUD spawn. I also proxy arrow
+//        input to Player 2 so two players can share one keyboard. KM
+// ============================================================================
+
 #include "ArcPlayerController.h"
 
-#include "EnhancedInputSubsystems.h"   // UEnhancedInputLocalPlayerSubsystem
-#include "EnhancedInputComponent.h"    // UEnhancedInputComponent
-#include "UObject/ConstructorHelpers.h"
+#include "EnhancedInputSubsystems.h"   // notes: UEnhancedInputLocalPlayerSubsystem for IMC attach. KM
+#include "EnhancedInputComponent.h"    // notes: Bind Enhanced Input actions. KM
+#include "UObject/ConstructorHelpers.h"// notes: Load IMC/IA assets by path once. KM
 
-#include "Blueprint/UserWidget.h"
-#include "Engine/GameViewportClient.h"
-#include "Engine/LocalPlayer.h"
-#include "Kismet/GameplayStatics.h"
-#include "Components/CanvasPanelSlot.h"
+#include "Blueprint/UserWidget.h"      // notes: CreateWidget + widget types. KM
+#include "Engine/GameViewportClient.h" // notes: AddViewportWidgetForPlayer. KM
+#include "Engine/LocalPlayer.h"        // notes: Get LocalPlayer/ControllerId. KM
+#include "Kismet/GameplayStatics.h"    // notes: GetPlayerController for proxy. KM
+#include "Components/CanvasPanelSlot.h"// notes: Anchor/position helpers if needed. KM
 
-#include "GameFramework/Character.h"
-#include "ArcCharacter.h"
+#include "GameFramework/Character.h"   // notes: Pawn base for forwarding. KM
+#include "ArcCharacter.h"              // notes: We call pawn handlers in proxy. KM
 
-// notes: load assets in ctor (paths copied from Content Browser References)
+// ============================================================================
+// Ctor: load IMC/IA assets once so BeginPlay can attach them by ControllerId
+// ============================================================================
 AArcPlayerController::AArcPlayerController(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
@@ -43,7 +51,7 @@ AArcPlayerController::AArcPlayerController(const FObjectInitializer& ObjectIniti
         if (DashRef.Succeeded()) { IA_Dash = DashRef.Object; }
     }
 
-    // --- Keyboard proxy for P2 (used only on ControllerId==0) ---
+    // --- Keyboard proxy for P2 (only used on ControllerId==0) ---
     {
         static ConstructorHelpers::FObjectFinder<UInputMappingContext> ProxyIMCRef(
             TEXT("/Game/Input/Contexts/IMC_KeyboardProxy_P2.IMC_KeyboardProxy_P2"));
@@ -63,11 +71,14 @@ AArcPlayerController::AArcPlayerController(const FObjectInitializer& ObjectIniti
     }
 }
 
+// ============================================================================
+// BeginPlay: attach mapping for this LocalPlayer and spawn per-viewport HUD
+// ============================================================================
 void AArcPlayerController::BeginPlay()
 {
     Super::BeginPlay();
 
-    // notes: attach the right IMC to the right LocalPlayer; add proxy on ControllerId==0
+    // Add correct IMC for this LocalPlayer; add proxy on ControllerId==0 because one keyboard. KM
     if (ULocalPlayer* LP = GetLocalPlayer())
     {
         if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
@@ -75,10 +86,10 @@ void AArcPlayerController::BeginPlay()
         {
             const int32 ControllerId = LP->GetControllerId();
 
-            // notes: clear stale contexts (PIE restarts can duplicate)
+            // Clear stale contexts (PIE restarts can duplicate). KM
             Subsystem->ClearAllMappings();
 
-            // --- Base IMC per LocalPlayer ---
+            // Base IMC per LocalPlayer. KM
             if (ControllerId == 0 && IMC_Player1)
             {
                 Subsystem->AddMappingContext(IMC_Player1, /*Priority*/0);
@@ -90,7 +101,7 @@ void AArcPlayerController::BeginPlay()
                 UE_LOG(LogTemp, Log, TEXT("[ArcPC] Added IMC_Player2 on ControllerId=1"));
             }
 
-            // --- Keyboard proxy for P2 (only on ControllerId==0) ---
+            // Keyboard proxy for P2 (only on ControllerId==0). KM
             if (ControllerId == 0 && IMC_KeyboardProxy_P2)
             {
                 Subsystem->AddMappingContext(IMC_KeyboardProxy_P2, /*Priority*/1);
@@ -110,7 +121,7 @@ void AArcPlayerController::BeginPlay()
         }
     }
 
-    // notes: robust split-screen spawn: attach timer HUD to THIS local player's viewport
+    // Timer HUD per LocalPlayer viewport. I add via GameViewport to respect split-screen. KM
     {
         FTimerHandle H;
         FTimerDelegate D;
@@ -135,22 +146,19 @@ void AArcPlayerController::BeginPlay()
                 {
                     if (ULocalPlayer* LP2 = GetLocalPlayer())
                     {
-                        // UE 5.4: returns void
-                        GVC->AddViewportWidgetForPlayer(LP2, W->TakeWidget(), /*ZOrder=*/100);
+                        GVC->AddViewportWidgetForPlayer(LP2, W->TakeWidget(), /*ZOrder=*/100); // UE 5.4 returns void. KM
                         UE_LOG(LogTemp, Log, TEXT("[PC] AddViewportWidgetForPlayer done for %s"), *GetName());
                     }
                     else
                     {
-                        // fallback (shouldn't happen in split-screen)
-                        W->AddToPlayerScreen(100);
+                        W->AddToPlayerScreen(100); // Fallback; not expected for split-screen. KM
                         UE_LOG(LogTemp, Log, TEXT("[PC] Fallback AddToPlayerScreen for %s"), *GetName());
                     }
                 }
 
-                // notes: keep reference to prevent GC
-                TimerWidgetInstance = W;
+                TimerWidgetInstance = W; // Keep ref so GC won’t collect. KM
 
-                // notes: force top-center placement
+                // Force top-center placement for visibility in both sub-views. KM
                 W->SetAnchorsInViewport(FAnchors(0.5f, 0.f, 0.5f, 0.f));
                 W->SetAlignmentInViewport(FVector2D(0.5f, 0.f));
                 W->SetPositionInViewport(FVector2D(0.f, 12.f), false);
@@ -160,8 +168,8 @@ void AArcPlayerController::BeginPlay()
 
         GetWorldTimerManager().SetTimer(H, D, /*Rate=*/0.10f, /*bLoop=*/false);
     }
-    // --- Score HUD per player (mirrors timer pattern) ---
-// notes: spawn after a tiny delay so LocalPlayer/GVC are ready (same as timer)
+
+    // Score HUD per LocalPlayer viewport (same pattern). KM
     {
         FTimerHandle H;
         FTimerDelegate D;
@@ -186,22 +194,19 @@ void AArcPlayerController::BeginPlay()
                 {
                     if (ULocalPlayer* LP2 = GetLocalPlayer())
                     {
-                        // UE 5.4: returns void
                         GVC->AddViewportWidgetForPlayer(LP2, W->TakeWidget(), /*ZOrder=*/90);
                         UE_LOG(LogTemp, Log, TEXT("[PC] Score AddViewportWidgetForPlayer done for %s"), *GetName());
                     }
                     else
                     {
-                        // notes: fallback (shouldn't happen in split-screen)
                         W->AddToPlayerScreen(90);
                         UE_LOG(LogTemp, Log, TEXT("[PC] Score Fallback AddToPlayerScreen for %s"), *GetName());
                     }
                 }
 
-                // notes: keep reference so GC won't collect the widget
-                ScoreWidgetInstance = W;
+                ScoreWidgetInstance = W; // Prevent GC. KM
 
-                // notes: force per-player placement in viewport
+                // Place per player: P1 left, P2 right. I use anchors to be split-screen safe. KM
                 int32 ControllerIdForLayout = 0;
                 if (ULocalPlayer* LPx = GetLocalPlayer())
                 {
@@ -230,16 +235,15 @@ void AArcPlayerController::BeginPlay()
         GetWorldTimerManager().SetTimer(H, D, /*Rate=*/0.10f, /*bLoop=*/false);
     }
 
-
-    // notes: game-only input, hide cursor
+    // Game-only input, hide cursor. KM
     FInputModeGameOnly Mode;
     SetInputMode(Mode);
     bShowMouseCursor = false;
 }
 
-
-// --- Proxy: handlers bound to IA_*_P2, then routed to Player #1 pawn ---
-
+// ============================================================================
+// Proxy: handlers bound to IA_*_P2; route to Player 2 pawn
+// ============================================================================
 void AArcPlayerController::OnP2Move(const FInputActionValue& Value)
 {
     Proxy_P2_Move(Value.Get<FVector2D>());
@@ -263,7 +267,7 @@ void AArcPlayerController::Proxy_P2_Move(const FVector2D& Axis)
         {
             if (!Axis.IsNearlyZero())
             {
-                // notes: same mapping as character handler: Y -> +X, X -> +Y (signs handled in pawn)
+                // notes: Same mapping as pawn handler: Y → +X, X → +Y (ortho screen → world). KM
                 P2Pawn->AddMovementInput(FVector::XAxisVector, Axis.Y);
                 P2Pawn->AddMovementInput(FVector::YAxisVector, Axis.X);
             }
@@ -275,12 +279,12 @@ void AArcPlayerController::Proxy_P2_Fire()
 {
     if (APlayerController* PC2 = UGameplayStatics::GetPlayerController(this, 1))
         if (AArcCharacter* P2Pawn = Cast<AArcCharacter>(PC2->GetPawn()))
-            P2Pawn->HandleFire(FInputActionValue()); // notes: reuse placeholder
+            P2Pawn->HandleFire(FInputActionValue()); // Reuse pawn placeholder. KM
 }
 
 void AArcPlayerController::Proxy_P2_Dash()
 {
     if (APlayerController* PC2 = UGameplayStatics::GetPlayerController(this, 1))
         if (AArcCharacter* P2Pawn = Cast<AArcCharacter>(PC2->GetPawn()))
-            P2Pawn->HandleDash(FInputActionValue()); // notes: reuse placeholder
+            P2Pawn->HandleDash(FInputActionValue()); // Reuse pawn placeholder. KM
 }

@@ -1,7 +1,20 @@
+// ============================================================================
+// ArcGameState.cpp
+// notes: own the round timer (count-up) and nothing else.
+//        - increment once per second.
+//        - log MM:SS so I can verify in Output Log.
+//        - UI (e.g., W_RoundTimer) pulls the value via GetElapsedSeconds().
+// ============================================================================
+
 #include "ArcGameState.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "Engine/Engine.h" // notes: for GEngine->AddOnScreenDebugMessage
 
+// ============================================================================
+// BeginPlay
+// notes: start the 1s loop; begin at 00:00 and first fire after 1s (shows 00:01).
+// ============================================================================
 void AArcGameState::BeginPlay()
 {
     Super::BeginPlay();
@@ -21,6 +34,11 @@ void AArcGameState::BeginPlay()
     UE_LOG(LogTemp, Log, TEXT("[Timer] Started count-up from 00:00"));
 }
 
+// ============================================================================
+// TickOneSecond
+// notes: increment authoritative seconds, print MM:SS, and show small on-screen
+//        debug so I SEE it incrementing during tests.
+// ============================================================================
 void AArcGameState::TickOneSecond()
 {
     ++ElapsedSeconds;
@@ -35,11 +53,10 @@ void AArcGameState::TickOneSecond()
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(
-            /*Key=*/ 12345,      // constant key – overwrites previous line
+            /*Key=*/ 12345,      // notes: constant key – overwrites previous line
             /*TimeToDisplay=*/ 1.1f,
             FColor::White,
             FString::Printf(TEXT("%02d:%02d"), Minutes, Seconds)
         );
     }
 }
-

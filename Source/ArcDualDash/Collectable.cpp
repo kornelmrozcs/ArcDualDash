@@ -1,87 +1,102 @@
-#include "Collectable.h"
-#include "ArcCharacter.h"
-#include "ArcPlayerState.h"
-#include "Components/CapsuleComponent.h"
+// ============================================================================
+// Collectable.cpp
+// notes: Overlap-driven pickup. I award score (if PS exists), apply effects to
+//        ArcCharacter, then hide and destroy myself. KM
+// ============================================================================
 
+#include "Collectable.h"
+#include "ArcCharacter.h"      // notes: For applying boost/health/ammo. KM
+#include "ArcPlayerState.h"    // notes: For AddScoreInt when available. KM
+#include "Components/CapsuleComponent.h" // notes: Used by character; not required here but kept for context. KM
+
+// ============================================================================
+// Ctor: components + default collision for a trigger pickup
+// ============================================================================
 ACollectable::ACollectable()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // notes: actor-level collision enabled so components can query
-    SetActorEnableCollision(true);
+    SetActorEnableCollision(true); // notes: Let components receive overlaps. KM
 
-    // --- root ---
+    // Root
     RootComp = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     SetRootComponent(RootComp);
 
-    // --- trigger sphere (overlap with Pawn only) ---
+    // Trigger sphere: overlap only with Pawns
     Sphere = CreateDefaultSubobject<USphereComponent>(TEXT("Sphere"));
     Sphere->SetupAttachment(RootComp);
-    Sphere->InitSphereRadius(100.f); // tune in BP via component details
+    Sphere->InitSphereRadius(100.f); // notes: Tune in BP. KM
     Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
     Sphere->SetCollisionObjectType(ECC_WorldDynamic);
-    Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);   // notes: hard reset
+    Sphere->SetCollisionResponseToAllChannels(ECR_Ignore); // notes: Reset first. KM
     Sphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
     Sphere->SetGenerateOverlapEvents(true);
 
-    // --- visual mesh (no collision) ---
+    // Visual mesh: no collision
     Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StaticMesh"));
     Mesh->SetupAttachment(RootComp);
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    Tags.Add(FName("Collectable"));
+    Tags.Add(FName("Collectable")); // notes: Helpful for debugging/filters. KM
 }
 
+// ============================================================================
+// BeginPlay: bind overlap and enforce no-collision on mesh
+// ============================================================================
 void ACollectable::BeginPlay()
 {
     Super::BeginPlay();
 
-    // notes: hard guards to avoid crashes when BP/instance lost components
+    // Guard against broken BP instances. KM
     if (!ensureAlwaysMsgf(IsValid(Sphere), TEXT("[Collectable] Sphere is null on %s"), *GetName()))
     {
         return;
     }
+
+    // Visual should never block or overlap. KM
     if (Mesh && Mesh->GetCollisionEnabled() != ECollisionEnabled::NoCollision)
     {
-        // notes: visual should never block/overlap – enforce once
         Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     }
 
     Sphere->SetGenerateOverlapEvents(true);
     Sphere->OnComponentBeginOverlap.AddDynamic(this, &ACollectable::OnSphereBeginOverlap);
 
-    // notes: recompute initial overlaps (safe; sometimes helpful after editor reloads)
+    // Recompute overlaps (helps after editor reload). KM
     Sphere->UpdateOverlaps();
     UpdateOverlaps(false);
 }
 
+// ============================================================================
+// Overlap: give score (if any) and apply effects to our character
+// ============================================================================
 void ACollectable::OnSphereBeginOverlap(UPrimitiveComponent* /*OverlappedComp*/, AActor* OtherActor,
     UPrimitiveComponent* /*OtherComp*/, int32 /*OtherBodyIndex*/, bool /*bFromSweep*/,
     const FHitResult& /*SweepResult*/)
 {
-    // notes: only react to Pawns (players/bots)
+    // Only Pawns can pick this. KM
     APawn* Pawn = Cast<APawn>(OtherActor);
     if (!Pawn)
     {
         return;
     }
 
-    // optional: award score to this pawn's PlayerState if present
+    // Award score to the picker’s PlayerState (prefer our ArcPlayerState).
     if (APlayerState* PS = Pawn->GetPlayerState())
     {
         if (AArcPlayerState* ArcPS = Cast<AArcPlayerState>(PS))
         {
-            ArcPS->AddScoreInt(ScoreValue);
+            ArcPS->AddScoreInt(ScoreValue); // notes: Keeps score path unified. KM
         }
         else
         {
-            // notes: even if not our custom PS, try to bump base float score for safety
+            // Fallback: bump base float score so non-custom PS still gains points. KM
             const float NewScore = PS->GetScore() + static_cast<float>(ScoreValue);
             PS->SetScore(NewScore);
         }
     }
 
-    // notes: if it's our character, apply effects (boost etc.)
+    // Apply effects if the picker is our character.
     if (AArcCharacter* ArcChar = Cast<AArcCharacter>(Pawn))
     {
         ApplyEffects(ArcChar);
@@ -90,37 +105,38 @@ void ACollectable::OnSphereBeginOverlap(UPrimitiveComponent* /*OverlappedComp*/,
     UE_LOG(LogTemp, Log, TEXT("[Collectable] picked by %s (Score +%d, Boost=%s, Dur=%.1fs)"),
         *GetNameSafe(OtherActor), ScoreValue, bGivesSpeedBoost ? TEXT("Yes") : TEXT("No"), BoostDuration);
 
-    ConsumePickup();
+    ConsumePickup(); // notes: Remove the pickup. KM
 }
 
+// ============================================================================
+// ApplyEffects: boost/health/ammo; easy to extend in BP
+// ============================================================================
 void ACollectable::ApplyEffects_Implementation(AArcCharacter* Picker)
 {
     if (!Picker) return;
 
-    // notes: o speed boost
     if (bGivesSpeedBoost)
     {
-        Picker->StartTimedPowerUp(BoostDuration);
+        Picker->StartTimedPowerUp(BoostDuration); // notes: Temporary speed change. KM
     }
 
-    // notes:  health
     if (HealthAmount != 0)
     {
-        Picker->AddHealth(HealthAmount);
+        Picker->AddHealth(HealthAmount); // notes: Clamped in character. KM
     }
 
-    // notes:  ammo
     if (AmmoAmount != 0)
     {
-        Picker->AddAmmo(AmmoAmount);
+        Picker->AddAmmo(AmmoAmount); // notes: Clamped in character. KM
     }
 }
 
-
+// ============================================================================
+// Consume: hide, disable, and destroy soon
+// ============================================================================
 void ACollectable::ConsumePickup()
 {
-    // notes: hide + disable collisions and remove shortly
     SetActorEnableCollision(false);
     SetActorHiddenInGame(true);
-    SetLifeSpan(0.1f);
+    SetLifeSpan(0.1f); // notes: Short lifetime so it disappears fast. KM
 }

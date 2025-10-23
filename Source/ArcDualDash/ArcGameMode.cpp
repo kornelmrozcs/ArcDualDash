@@ -1,42 +1,39 @@
 ﻿// ============================================================================
 // ArcGameMode.cpp
-// notes: GameMode for ArcDualDash. I keep it minimal and data-driven.
-//        - I own LocalPlayer #2 creation for split-screen.
-//        - I choose PlayerStart per player using map tags (P1/P2).
-//        - I don’t spawn HUD here; PlayerControllers own UI (per our pattern).
+// notes: Minimal, data-driven GameMode. I:
+//        - create LocalPlayer #2 for split-screen,
+//        - pick PlayerStart per player by tag,
+//        - leave HUD to PlayerControllers. KM
 // ============================================================================
 
 #include "ArcGameMode.h"
 
 // --- Project types I coordinate with ---
-#include "ArcPlayerState.h"   // notes: I set PlayerStateClass = AArcPlayerState::StaticClass()
-#include "ArcGameState.h"     // notes: authoritative round timer (count-up) lives here
+#include "ArcPlayerState.h"   // notes: I set PlayerStateClass so score lives on our type. KM
+#include "ArcGameState.h"     // notes: I set GameStateClass so UI reads one timer source. KM
 
-// --- Engine / Gameplay helpers ---
-#include "GameFramework/PlayerController.h"
-#include "GameFramework/PlayerStart.h"
-#include "GameFramework/PlayerState.h" // notes: for GetPlayerId()
-#include "Kismet/GameplayStatics.h"    // notes: CreatePlayer, GetAllActorsOfClass
+// --- Engine / helpers ---
+#include "GameFramework/PlayerController.h" // notes: Needed for controller checks. KM
+#include "GameFramework/PlayerStart.h"      // notes: I search these when spawning. KM
+#include "GameFramework/PlayerState.h"      // notes: I read GetPlayerId() for stable index. KM
+#include "Kismet/GameplayStatics.h"         // notes: CreatePlayer + GetAllActorsOfClass. KM
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 
 // ============================================================================
 // 1) Constructor
-// notes: I bind core classes. I keep the rest in Project Settings for BP flexibility.
+// notes: Bind our custom state classes; keep other defaults in Project Settings. KM
 // ============================================================================
 AArcGameMode::AArcGameMode()
 {
-    // notes: use my custom state classes; other defaults remain data-driven via Project Settings
-    PlayerStateClass = AArcPlayerState::StaticClass();
-    GameStateClass = AArcGameState::StaticClass();  // notes: read-only timer authority for UI
+    PlayerStateClass = AArcPlayerState::StaticClass(); // notes: So pickups/UI talk to our PS. KM
+    GameStateClass = AArcGameState::StaticClass();   // notes: So widgets read the shared timer. KM
 }
 
 // ============================================================================
 // 2) BeginPlay
-// notes: I enforce local split-screen by creating a second LocalPlayer here.
-//        - I do this once, idempotent.
-//        - UI remains in PlayerController (CreateWidget + AddViewportWidgetForPlayer).
-//        - This keeps packaging behavior identical to PIE.
+// notes: Create LocalPlayer #2 once. I did this because editor “Number of Players”
+//        does not carry to packaged build. UI stays in PlayerController. KM
 // ============================================================================
 void AArcGameMode::BeginPlay()
 {
@@ -45,21 +42,21 @@ void AArcGameMode::BeginPlay()
     UWorld* World = GetWorld();
     if (!World)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ArcGameMode] World is null at BeginPlay() – aborting LocalPlayer creation."));
+        UE_LOG(LogTemp, Warning, TEXT("[ArcGameMode] World is null at BeginPlay() – skip LP#2."));
         return;
     }
 
     const int32 ExistingPCs = World->GetNumPlayerControllers();
     if (ExistingPCs >= 2)
     {
-        UE_LOG(LogTemp, Log, TEXT("[ArcGameMode] %d PC(s) present – skipping LocalPlayer#2 creation."), ExistingPCs);
+        UE_LOG(LogTemp, Log, TEXT("[ArcGameMode] %d PC(s) present – skip LP#2."), ExistingPCs);
         return;
     }
 
-    // notes: ControllerId 0 is primary; I request ControllerId 1 for the second split viewport.
+    // notes: ControllerId 0 = first view, I request ControllerId 1 for split-screen. KM
     if (UGameplayStatics::CreatePlayer(World, /*ControllerId*/ 1, /*bSpawnPawn*/ true))
     {
-        UE_LOG(LogTemp, Log, TEXT("[ArcGameMode] LocalPlayer#2 created successfully for split-screen."));
+        UE_LOG(LogTemp, Log, TEXT("[ArcGameMode] LocalPlayer#2 created."));
     }
     else
     {
@@ -68,17 +65,15 @@ void AArcGameMode::BeginPlay()
 }
 
 // ============================================================================
-// 3) Helpers (internal)
-// notes: I support both Actor Tags and PlayerStartTag (case-insensitive).
-//        Level setup: place two PlayerStarts; tag them as P1 and P2.
-//        - Actor → Details → Tags: add "P1" or "P2"
-//        - or PlayerStart → Player Start Tag: set "P1" or "P2"
+// 3) Helpers
+// notes: Check both Actor Tags and PlayerStartTag (case-insensitive). I did this
+//        because now we can use either field. Used by: spawn selection. KM
 // ============================================================================
 static bool MatchesWantedTag(AActor* Start, const FName& WantedTag)
 {
     if (!IsValid(Start)) return false;
 
-    // notes: 3a) Actor Tags
+    // Actor Tags path
     for (const FName& Tag : Start->Tags)
     {
         if (Tag.IsEqual(WantedTag, ENameCase::IgnoreCase))
@@ -87,7 +82,7 @@ static bool MatchesWantedTag(AActor* Start, const FName& WantedTag)
         }
     }
 
-    // notes: 3b) PlayerStartTag property
+    // PlayerStartTag property path
     if (const APlayerStart* PS = Cast<APlayerStart>(Start))
     {
         if (PS->PlayerStartTag.IsEqual(WantedTag, ENameCase::IgnoreCase))
@@ -100,54 +95,47 @@ static bool MatchesWantedTag(AActor* Start, const FName& WantedTag)
 }
 
 // ============================================================================
-// 4) PlayerStart selection (per-player)
-// notes: I map player → start by tag with a stable per-player index:
-//        - Index 0 → "P1", Index 1 → "P2"
-//        I log what I find for quick debugging.
-//        Cross-links:
-//        - AArcPlayerController: owns HUD per LocalPlayer (score/timer per viewport)
-//        - AArcGameState: timer the HUD reads (I don’t touch UI here)
+// 4) PlayerStart selection
+// notes: Map a stable per-player index to tags: 0→P1, 1→P2. I switched to
+//        PlayerState->GetPlayerId() because LocalPlayer->ControllerId was 0 for both
+//        during spawn. Used by: engine when spawning players. KM
 // ============================================================================
 AActor* AArcGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
-    // notes: keep parent fallback; I only override when I find tagged starts
-    AActor* Fallback = Super::ChoosePlayerStart_Implementation(Player);
+    AActor* Fallback = Super::ChoosePlayerStart_Implementation(Player); // notes: Safety if tags missing. KM
 
-    // notes: derive stable per-player index for split-screen
+    // --- stable index (prefer PlayerState id, then LocalPlayer id, then guess) ---
     int32 Index = -1;
 
-    // 1) Prefer PlayerState->GetPlayerId() (valid on server during spawn)
     if (APlayerState* PS = Player ? Player->GetPlayerState<APlayerState>() : nullptr)
     {
-        Index = PS->GetPlayerId();
+        Index = PS->GetPlayerId(); // notes: Works on server during spawn; fixed both-as-P1 bug. KM
     }
 
-    // 2) Fallback: LocalPlayer->GetControllerId() (can be null in GameMode)
     if (Index < 0)
     {
         if (const APlayerController* PC = Cast<APlayerController>(Player))
         {
             if (const ULocalPlayer* LP = PC->GetLocalPlayer())
             {
-                Index = LP->GetControllerId();
+                Index = LP->GetControllerId(); // notes: Fallback; sometimes null in GM. KM
             }
         }
     }
 
-    // 3) Last resort: guess from number of PlayerControllers
     if (Index < 0)
     {
         const int32 NumPCs = GetWorld() ? GetWorld()->GetNumPlayerControllers() : 1;
-        Index = (NumPCs > 1) ? 1 : 0;
+        Index = (NumPCs > 1) ? 1 : 0; // notes: Last resort guess. KM
     }
 
     const FName WantedPrimary = (Index % 2 == 0) ? FName(TEXT("P1")) : FName(TEXT("P2"));
     const FName WantedSecondary = (Index % 2 == 0) ? FName(TEXT("P2")) : FName(TEXT("P1"));
 
-    UE_LOG(LogTemp, Log, TEXT("[GM] ChoosePlayerStart: Index=%d (PS/LP), want [%s] then [%s]"),
+    UE_LOG(LogTemp, Log, TEXT("[GM] ChoosePlayerStart: Index=%d, want [%s] then [%s]"),
         Index, *WantedPrimary.ToString(), *WantedSecondary.ToString());
 
-    // notes: gather and log all PlayerStarts so I can see tags immediately
+    // --- scan starts and log what we have (helps level setup) ---
     TArray<AActor*> Starts;
     UGameplayStatics::GetAllActorsOfClass(this, APlayerStart::StaticClass(), Starts);
 
@@ -156,39 +144,33 @@ AActor* AArcGameMode::ChoosePlayerStart_Implementation(AController* Player)
     {
         const APlayerStart* PS = Cast<APlayerStart>(S);
         FString ActorTags;
-        for (const FName& Tag : S->Tags)
-        {
-            ActorTags += Tag.ToString() + TEXT(" ");
-        }
+        for (const FName& Tag : S->Tags) { ActorTags += Tag.ToString() + TEXT(" "); }
         const FString PSTag = PS ? PS->PlayerStartTag.ToString() : TEXT("<none>");
         UE_LOG(LogTemp, Log, TEXT("  - %s | ActorTags=[%s] | PlayerStartTag=%s"),
             *GetNameSafe(S), *ActorTags, *PSTag);
     }
 
-    // notes: try PRIMARY tag first
+    // --- choose PRIMARY tag, then SECONDARY, else fallback ---
     for (AActor* Start : Starts)
     {
         if (MatchesWantedTag(Start, WantedPrimary))
         {
-            UE_LOG(LogTemp, Log, TEXT("[GM] ChoosePlayerStart: matched PRIMARY %s -> %s"),
+            UE_LOG(LogTemp, Log, TEXT("[GM] ChoosePlayerStart: PRIMARY %s -> %s"),
                 *WantedPrimary.ToString(), *GetNameSafe(Start));
             return Start;
         }
     }
 
-    // notes: graceful fallback to SECONDARY tag (lets me keep playing even if one tag is missing)
     for (AActor* Start : Starts)
     {
         if (MatchesWantedTag(Start, WantedSecondary))
         {
-            UE_LOG(LogTemp, Warning, TEXT("[GM] ChoosePlayerStart: PRIMARY %s not found, using SECONDARY %s -> %s"),
-                *WantedPrimary.ToString(), *WantedSecondary.ToString(), *GetNameSafe(Start));
+            UE_LOG(LogTemp, Warning, TEXT("[GM] ChoosePlayerStart: PRIMARY missing, using SECONDARY %s -> %s"),
+                *WantedSecondary.ToString(), *GetNameSafe(Start));
             return Start;
         }
     }
 
-    // notes: last resort — parent logic
-    UE_LOG(LogTemp, Warning, TEXT("[GM] ChoosePlayerStart: no start with %s nor %s, using fallback"),
-        *WantedPrimary.ToString(), *WantedSecondary.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("[GM] ChoosePlayerStart: no tagged starts, using fallback"));
     return Fallback;
 }
