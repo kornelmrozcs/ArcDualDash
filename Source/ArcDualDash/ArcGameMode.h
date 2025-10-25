@@ -12,7 +12,7 @@
 #include "ArcGameMode.generated.h"
 
 UCLASS()
-class ARCDUALDASH_API AArcGameMode : public AGameModeBases
+class ARCDUALDASH_API AArcGameMode : public AGameModeBase
 {
     GENERATED_BODY()
 
