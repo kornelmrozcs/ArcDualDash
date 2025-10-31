@@ -60,3 +60,26 @@ void AMyCar::OnHandbrakeReleased()
 {
 	GetVehicleMovementComponent()->SetHandbrakeInput(false);
 }
+
+// notes: enforce sequential checkpoint order and count laps; mirrors lab logic
+void AMyCar::LapCheckpoint(int32 _CheckpointNo, int32 _MaxCheckpoint, bool _bStartFinishLine)
+{
+	if (CurrentCheckpoint >= _MaxCheckpoint && _bStartFinishLine == true)
+	{
+		// notes: passed last gate and hit start/finish -> new lap
+		Lap += 1;
+		CurrentCheckpoint = 1;
+	}
+	else if (_CheckpointNo == CurrentCheckpoint + 1)
+	{
+		// notes: correct next checkpoint in order
+		CurrentCheckpoint += 1;
+	}
+	else if (_CheckpointNo < CurrentCheckpoint)
+	{
+		// notes: allow correction if we come from a loop-shortcut back to earlier gate
+		CurrentCheckpoint = _CheckpointNo;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("Lap: %i Check Point: %i"), Lap, CurrentCheckpoint);
+}
