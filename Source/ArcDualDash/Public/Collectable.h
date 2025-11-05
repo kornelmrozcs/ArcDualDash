@@ -8,6 +8,10 @@
 
 class AMyCar;
 
+/**
+ * Collectable (ring / punkt / boost)
+ * notes: Sphere overlaps Vehicle (albo preset "Pickup"). Mesh — tylko wizual.
+ */
 UCLASS()
 class ARCDUALDASH_API ACollectable : public AActor
 {
@@ -19,35 +23,36 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
-	// --- components (show as Inherited in BP) ---
+	// --- Components (visible as Inherited) ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Collectable", meta = (AllowPrivateAccess = "true"))
-	USceneComponent* RootComp = nullptr;
+	USceneComponent* RootComp;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Collectable", meta = (AllowPrivateAccess = "true"))
-	USphereComponent* Sphere = nullptr;
+	USphereComponent* Sphere;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Collectable", meta = (AllowPrivateAccess = "true"))
-	UStaticMeshComponent* Mesh = nullptr;
+	UStaticMeshComponent* Mesh;
 
 public:
-	// --- gameplay params (edit per BP instance) ---
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collectable|Score")
-	int32 ScoreValue = 1; // e.g., ring worth 1pt
+	// --- Gameplay params (tweak in BP) ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collectable|Score")
+	int32 ScoreValue = 1;          // np. zwyk³y ring = 1
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collectable|Boost")
-	bool bGivesSpeedBoost = false; // true for speed ring
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collectable|Boost")
+	bool bGivesSpeedBoost = true;  // ring-boost = true
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collectable|Boost", meta = (EditCondition = "bGivesSpeedBoost", ClampMin = "0.1", ClampMax = "30.0"))
-	float BoostDuration = 3.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collectable|Boost", meta = (EditCondition = "bGivesSpeedBoost", ClampMin = "0.1", ClampMax = "10.0"))
+	float BoostDuration = 2.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collectable|Boost", meta = (EditCondition = "bGivesSpeedBoost", ClampMin = "1.0", ClampMax = "5.0"))
-	float BoostScale = 1.75f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collectable|Boost", meta = (EditCondition = "bGivesSpeedBoost", ClampMin = "1000", ClampMax = "10000"))
+	float BoostForce = 1800000.f;
 
 protected:
-	// --- overlap ---
+	// --- overlap handler ---
 	UFUNCTION()
 	void OnSphereBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
-		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep,
+		const FHitResult& SweepResult);
 
 	void ConsumePickup(); // notes: hide + disable + quick destroy
 };
