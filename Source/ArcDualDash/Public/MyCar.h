@@ -40,4 +40,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Race|Laps")
 	void LapCheckpoint(int32 _CheckpointNo, int32 _MaxCheckpoint, bool _bStartFinishLine);
 
+	// notes: P2 keyboard proxy assets (Arrows + Right Ctrl). I only add/bind these on ControllerId==0.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|P2")
+	class UInputMappingContext* ProxyMappingContext_P2 = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|P2")
+	class UInputAction* MoveAction_P2 = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|P2")
+	class UInputAction* HandbrakeAction_P2 = nullptr;
+
+	// notes: P2 keyboard proxy handlers. I use them only on ControllerId==0 to drive Player 2's car.
+	void Move_P2(const FInputActionValue& Value);
+	void MoveEnd_P2();
+	void OnHandbrakePressed_P2();
+	void OnHandbrakeReleased_P2();
+
 };
