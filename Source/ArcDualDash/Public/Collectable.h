@@ -45,7 +45,7 @@ public:
 	float BoostDuration = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collectable|Boost", meta = (EditCondition = "bGivesSpeedBoost", ClampMin = "1000", ClampMax = "10000"))
-	float BoostForce = 1800000.f;
+	float BoostForce = 1000.f;
 
 protected:
 	// --- overlap handler ---
