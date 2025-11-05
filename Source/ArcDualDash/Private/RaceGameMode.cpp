@@ -1,8 +1,7 @@
 // ============================================================================
 // RaceGameMode.cpp
 // notes: - create LocalPlayer #2 for split-screen
-//        - spawn each player at a tagged PlayerStart (P1/P2)
-//        I keep UI/HUD in PlayerController (not here).  KM
+//        - spawn each player at a tagged PlayerStart (P1/P2)  KM
 // ============================================================================
 #include "RaceGameMode.h"
 
@@ -12,7 +11,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------s-------
 // ctor: keep minimal; let BP/ProjectSettings define default pawn etc.
 // ----------------------------------------------------------------------------
 ARaceGameMode::ARaceGameMode()

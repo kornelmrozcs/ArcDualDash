@@ -1,13 +1,12 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 
 #include "MyCar.h"
 #include "GameFramework/Controller.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
-#include "Kismet/GameplayStatics.h"  // notes: GetPlayerController to reach PC(1)
-#include "ChaosWheeledVehicleMovementComponent.h" // notes: explicit for SetThrottle/Steering/Handbrake
-
+#include "Kismet/GameplayStatics.h"                  // notes: GetPlayerController to reach PC(1)
+#include "ChaosWheeledVehicleMovementComponent.h"    // notes: explicit for SetThrottle/Steering/Handbrake
+#include "TimerManager.h"                            // notes: for GetWorldTimerManager
+#include "Engine/EngineTypes.h"
 
 void AMyCar::BeginPlay()
 {
@@ -32,6 +31,13 @@ void AMyCar::BeginPlay()
 				Subsystem->AddMappingContext(ProxyMappingContext_P2, 1);
 			}
 		}
+	}
+	if (USkeletalMeshComponent* CarMesh = Cast<USkeletalMeshComponent>(GetRootComponent()))
+	{
+		CarMesh->SetGenerateOverlapEvents(true);                       // notes: I want overlap events
+		CarMesh->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap); // notes: rings use WorldDynamic
+		// notes: keep other channels as they are (driving physics etc.)
+		UE_LOG(LogTemp, Log, TEXT("[Car] Enabled overlaps with WorldDynamic on %s"), *GetName());
 	}
 }
 
@@ -68,28 +74,39 @@ void AMyCar::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	}
 }
 
-
 void AMyCar::Move(const FInputActionValue& Value)
 {
 	// input is a Vector2D
-	FVector2D MovementVector = Value.Get<FVector2D>();
-	GetVehicleMovementComponent()->SetThrottleInput(MovementVector.Y);
-	if (MovementVector.Y < 0)
+	const FVector2D MovementVector = Value.Get<FVector2D>();
+
+	// notes: apply boost scale only to throttle; clamp to valid input range
+	const float ScaledThrottle = FMath::Clamp(MovementVector.Y * CurrentThrottleScale, -1.0f, 1.0f);
+	GetVehicleMovementComponent()->SetThrottleInput(ScaledThrottle);
+
+	if (ScaledThrottle < 0.0f)
 	{
-		GetVehicleMovementComponent()->SetBrakeInput(MovementVector.Y * -1);
+		GetVehicleMovementComponent()->SetBrakeInput(-ScaledThrottle);
 	}
+	else
+	{
+		GetVehicleMovementComponent()->SetBrakeInput(0.0f);
+	}
+
 	GetVehicleMovementComponent()->SetSteeringInput(MovementVector.X);
 }
+
 void AMyCar::MoveEnd()
 {
-	GetVehicleMovementComponent()->SetBrakeInput(0);
-	GetVehicleMovementComponent()->SetThrottleInput(0);
-	GetVehicleMovementComponent()->SetSteeringInput(0);
+	GetVehicleMovementComponent()->SetBrakeInput(0.f);
+	GetVehicleMovementComponent()->SetThrottleInput(0.f);
+	GetVehicleMovementComponent()->SetSteeringInput(0.f);
 }
+
 void AMyCar::OnHandbrakePressed()
 {
 	GetVehicleMovementComponent()->SetHandbrakeInput(true);
 }
+
 void AMyCar::OnHandbrakeReleased()
 {
 	GetVehicleMovementComponent()->SetHandbrakeInput(false);
@@ -110,18 +127,18 @@ void AMyCar::Move_P2(const FInputActionValue& Value)
 	if (AMyCar* P2 = GetP2Car(this))
 	{
 		const FVector2D Axis = Value.Get<FVector2D>();
-		auto* Move = P2->GetVehicleMovementComponent();
+		auto* MoveComp = P2->GetVehicleMovementComponent();
 
-		Move->SetThrottleInput(Axis.Y);
+		MoveComp->SetThrottleInput(Axis.Y);
 		if (Axis.Y < 0.f)
 		{
-			Move->SetBrakeInput(-Axis.Y);
+			MoveComp->SetBrakeInput(-Axis.Y);
 		}
 		else
 		{
-			Move->SetBrakeInput(0.f);
+			MoveComp->SetBrakeInput(0.f);
 		}
-		Move->SetSteeringInput(Axis.X);
+		MoveComp->SetSteeringInput(Axis.X);
 	}
 }
 
@@ -129,10 +146,10 @@ void AMyCar::MoveEnd_P2()
 {
 	if (AMyCar* P2 = GetP2Car(this))
 	{
-		auto* Move = P2->GetVehicleMovementComponent();
-		Move->SetBrakeInput(0.f);
-		Move->SetThrottleInput(0.f);
-		Move->SetSteeringInput(0.f);
+		auto* MoveComp = P2->GetVehicleMovementComponent();
+		MoveComp->SetBrakeInput(0.f);
+		MoveComp->SetThrottleInput(0.f);
+		MoveComp->SetSteeringInput(0.f);
 	}
 }
 
@@ -151,8 +168,6 @@ void AMyCar::OnHandbrakeReleased_P2()
 		P2->GetVehicleMovementComponent()->SetHandbrakeInput(false);
 	}
 }
-
-
 
 // notes: enforce sequential checkpoint order and count laps; mirrors lab logic
 void AMyCar::LapCheckpoint(int32 _CheckpointNo, int32 _MaxCheckpoint, bool _bStartFinishLine)
@@ -175,4 +190,43 @@ void AMyCar::LapCheckpoint(int32 _CheckpointNo, int32 _MaxCheckpoint, bool _bSta
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("Lap: %i Check Point: %i"), Lap, CurrentCheckpoint);
+}
+
+// ===========================
+// Power-up: Speed Boost
+// ===========================
+void AMyCar::StartSpeedBoost(float DurationSeconds, float Scale)
+{
+	// notes: init current scale if a BP tweaked defaults earlier
+	if (CurrentThrottleScale <= 0.0f)
+	{
+		CurrentThrottleScale = DefaultThrottleScale;
+	}
+
+	CurrentThrottleScale = (Scale > 0.0f) ? Scale : BoostThrottleScale;
+
+	// notes: refresh timer so back-to-back pickups extend the effect
+	GetWorldTimerManager().ClearTimer(BoostTimer);
+	GetWorldTimerManager().SetTimer(
+		BoostTimer,
+		this,
+		&AMyCar::EndSpeedBoost,
+		(DurationSeconds > 0.0f ? DurationSeconds : DefaultBoostDuration),
+		false
+	);
+
+	UE_LOG(LogTemp, Log, TEXT("[Boost] Started: Scale=%.2f, Duration=%.2fs"), CurrentThrottleScale, DurationSeconds);
+}
+
+void AMyCar::EndSpeedBoost()
+{
+	CurrentThrottleScale = DefaultThrottleScale;
+	UE_LOG(LogTemp, Log, TEXT("[Boost] Ended"));
+}
+
+void AMyCar::AddScore(int32 Delta)
+{
+	const int32 Old = Score;
+	Score = FMath::Max(0, Old + Delta);
+	UE_LOG(LogTemp, Log, TEXT("[Score] +%d => %d"), Delta, Score);
 }
