@@ -42,8 +42,8 @@ void ACheckpoints::OnVolumeBeginOverlap(UPrimitiveComponent* /*OverlappedCompone
 {
     if (AMyCar* Car = Cast<AMyCar>(OtherActor))
     {
-        // notes: lab logic entry point
         Car->LapCheckpoint(CheckPointNo, MaxCheckPoints, bStartFinishLine);
+        Car->SetLastCheckpoint(this); // <— NEW line
     }
 }
 
