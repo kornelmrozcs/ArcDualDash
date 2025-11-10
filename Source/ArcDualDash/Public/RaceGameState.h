@@ -17,89 +17,94 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnLeaderboardUpdated);
 USTRUCT(BlueprintType)
 struct FPlayerRaceData
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
-    UPROPERTY(BlueprintReadWrite)
-    AMyCar* Car = nullptr;
+	UPROPERTY(BlueprintReadWrite)
+	AMyCar* Car = nullptr;
 
-    UPROPERTY(BlueprintReadWrite)
-    FString PlayerName;
+	UPROPERTY(BlueprintReadWrite)
+	FString PlayerName;
 
-    UPROPERTY(BlueprintReadWrite)
-    int32 Lap = 0;
+	UPROPERTY(BlueprintReadWrite)
+	int32 Lap = 0;
 
-    UPROPERTY(BlueprintReadWrite)
-    int32 Checkpoint = 0;
+	UPROPERTY(BlueprintReadWrite)
+	int32 Checkpoint = 0;
 
-    UPROPERTY(BlueprintReadWrite)
-    float ProgressKey = 0.f;
+	// Combined progress key (laps + checkpoints + fractional segment)
+	UPROPERTY(BlueprintReadWrite)
+	float ProgressKey = 0.f;
+
+	// Distance to next checkpoint (used as tie-breaker)
+	UPROPERTY(BlueprintReadWrite)
+	float DistanceToNext = 0.f;
 };
 
 UCLASS()
 class ARCDUALDASH_API ARaceGameState : public AGameStateBase
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
 public:
-    ARaceGameState();
+	ARaceGameState();
 
-    virtual void BeginPlay() override;
-    virtual void Tick(float DeltaSeconds) override;
+	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
-    // --- Delegates for UI ---
-    UPROPERTY(BlueprintAssignable, Category = "Events")
-    FOnTimeUpdated OnTimeUpdated;
+	// --- Delegates for UI ---
+	UPROPERTY(BlueprintAssignable, Category = "Events")
+	FOnTimeUpdated OnTimeUpdated;
 
-    UPROPERTY(BlueprintAssignable, Category = "Events")
-    FOnLapChanged OnLapChanged;
+	UPROPERTY(BlueprintAssignable, Category = "Events")
+	FOnLapChanged OnLapChanged;
 
-    UPROPERTY(BlueprintAssignable, Category = "Events")
-    FOnLeaderboardUpdated OnLeaderboardUpdated;
+	UPROPERTY(BlueprintAssignable, Category = "Events")
+	FOnLeaderboardUpdated OnLeaderboardUpdated;
 
-    // --- Race data ---
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race")
-    int32 TotalLaps = 3;
+	// --- Race data ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race")
+	int32 TotalLaps = 3;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Race")
-    int32 CurrentLap = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Race")
+	int32 CurrentLap = 1;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Race")
-    float ElapsedTime = 0.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Race")
+	float ElapsedTime = 0.f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race")
-    bool bTimerRunning = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race")
+	bool bTimerRunning = true;
 
-    // --- Leaderboard ---
-    UPROPERTY(BlueprintReadOnly, Category = "Leaderboard")
-    TArray<FPlayerRaceData> Leaderboard;
+	// --- Leaderboard ---
+	UPROPERTY(BlueprintReadOnly, Category = "Leaderboard")
+	TArray<FPlayerRaceData> Leaderboard;
 
-    UFUNCTION(BlueprintCallable, Category = "Leaderboard")
-    void UpdateLeaderboard();
+	UFUNCTION(BlueprintCallable, Category = "Leaderboard")
+	void UpdateLeaderboard();
 
-    UFUNCTION(BlueprintCallable, Category = "Race")
-    void IncrementLapAndBroadcast();
+	UFUNCTION(BlueprintCallable, Category = "Race")
+	void IncrementLapAndBroadcast();
 
-    UFUNCTION(BlueprintCallable, Category = "Race")
-    void ResetTimer();
+	UFUNCTION(BlueprintCallable, Category = "Race")
+	void ResetTimer();
 
-    UFUNCTION(BlueprintCallable, Category = "Race")
-    void StopTimer();
+	UFUNCTION(BlueprintCallable, Category = "Race")
+	void StopTimer();
 
 private:
-    FTimerHandle LeaderboardTimerHandle;
+	FTimerHandle LeaderboardTimerHandle;
 
-    // Cached checkpoints
-    UPROPERTY()
-    TArray<AActor*> TrackCheckpoints;
+	// Cached checkpoints
+	UPROPERTY()
+	TArray<AActor*> TrackCheckpoints;
 
-    int32 NumCheckpoints = 0;
+	int32 NumCheckpoints = 0;
 
-    // Helper function for progress along segment
-    static float CalculateSegmentT(const FVector& A, const FVector& B, const FVector& P)
-    {
-        FVector AB = B - A;
-        const float Len2 = FMath::Max(AB.SizeSquared(), 1.f);
-        float T = FVector::DotProduct(P - A, AB) / Len2;
-        return FMath::Clamp(T, 0.f, 1.f);
-    }
+	// Helper function for fractional progress along checkpoint segment
+	static float CalculateSegmentT(const FVector& A, const FVector& B, const FVector& P)
+	{
+		FVector AB = B - A;
+		const float Len2 = FMath::Max(AB.SizeSquared(), 1.f);
+		float T = FVector::DotProduct(P - A, AB) / Len2;
+		return FMath::Clamp(T, 0.f, 1.f);
+	}
 };

@@ -46,4 +46,8 @@ public:
     /** Instance of the spawned HUD (kept alive via UPROPERTY) */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
     class UUserWidget* HUDWidgetInstance = nullptr;
+
+    /** 1-based index for display / leaderboard (Player 1, Player 2, etc.) */
+    UPROPERTY(BlueprintReadOnly, Category = "Player")
+    int32 PlayerIndex = 0;
 };

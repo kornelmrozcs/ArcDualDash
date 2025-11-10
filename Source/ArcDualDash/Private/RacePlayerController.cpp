@@ -19,15 +19,26 @@
 // Constructor / BeginPlay
 // ============================================================================
 ARacePlayerController::ARacePlayerController(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+    : Super(ObjectInitializer)
 {
-	// HUDWidgetClass is set in BP_RacePC
+    // HUDWidgetClass is set in BP_RacePC
 }
 
 void ARacePlayerController::BeginPlay()
 {
-	Super::BeginPlay();
-	SpawnLocalHUD();
+    Super::BeginPlay();
+
+    // --- Assign player index for splitscreen / leaderboard ---
+    if (PlayerIndex == 0)
+    {
+        if (ULocalPlayer* LP = GetLocalPlayer())
+        {
+            PlayerIndex = LP->GetControllerId() + 1; // 1-based for display
+            UE_LOG(LogTemp, Log, TEXT("[RacePC] Assigned PlayerIndex = %d for %s"), PlayerIndex, *GetName());
+        }
+    }
+
+    SpawnLocalHUD();
 }
 
 // ============================================================================
@@ -35,76 +46,82 @@ void ARacePlayerController::BeginPlay()
 // ============================================================================
 void ARacePlayerController::SpawnLocalHUD()
 {
-	FTimerHandle H;
-	GetWorldTimerManager().SetTimer(H, [this]()
-		{
-			ULocalPlayer* LP = GetLocalPlayer();
-			UGameViewportClient* GVC = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+    FTimerHandle H;
+    GetWorldTimerManager().SetTimer(H, [this]()
+        {
+            ULocalPlayer* LP = GetLocalPlayer();
+            UGameViewportClient* GVC = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
 
-			if (!HUDWidgetClass)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[RacePC] HUDWidgetClass is null on %s"), *GetName());
-				return;
-			}
-			if (!LP || !GVC)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[RacePC] Missing LocalPlayer/GameViewport on %s"), *GetName());
-				return;
-			}
+            // --- Ensure PlayerIndex is valid (late correction) ---
+            if (PlayerIndex == 0 && LP)
+            {
+                PlayerIndex = LP->GetControllerId() + 1;
+                UE_LOG(LogTemp, Log, TEXT("[RacePC] Late PlayerIndex correction = %d for %s"), PlayerIndex, *GetName());
+            }
 
-			// --- Create widget instance ---
-			UUserWidget* W = CreateWidget<UUserWidget>(this, HUDWidgetClass);
-			if (!W)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[RacePC] CreateWidget failed on %s"), *GetName());
-				return;
-			}
-			W->SetOwningPlayer(this);
+            if (!HUDWidgetClass)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[RacePC] HUDWidgetClass is null on %s"), *GetName());
+                return;
+            }
+            if (!LP || !GVC)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[RacePC] Missing LocalPlayer/GameViewport on %s"), *GetName());
+                return;
+            }
 
-			// --- Automatically assign OwningCar variable in the BP widget ---
-			if (AMyCar* MyCar = Cast<AMyCar>(GetPawn()))
-			{
-				if (UWidgetBlueprintGeneratedClass* WidgetBPClass = Cast<UWidgetBlueprintGeneratedClass>(W->GetClass()))
-				{
-					// Find variable called "OwningCar" in the BP
-					if (FObjectPropertyBase* Prop = FindFProperty<FObjectPropertyBase>(WidgetBPClass, FName(TEXT("OwningCar"))))
-					{
-						Prop->SetObjectPropertyValue_InContainer(W, MyCar);
-						UE_LOG(LogTemp, Log, TEXT("[RacePC] Assigned OwningCar = %s for %s"), *MyCar->GetName(), *GetName());
-					}
-					else
-					{
-						UE_LOG(LogTemp, Warning, TEXT("[RacePC] Could not find 'OwningCar' variable in %s"), *W->GetName());
-					}
-				}
-			}
-			else
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[RacePC] No MyCar pawn found for %s"), *GetName());
-			}
+            // --- Create widget instance ---
+            UUserWidget* W = CreateWidget<UUserWidget>(this, HUDWidgetClass);
+            if (!W)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[RacePC] CreateWidget failed on %s"), *GetName());
+                return;
+            }
+            W->SetOwningPlayer(this);
 
-			// --- Add to correct split-screen region ---
-			GVC->AddViewportWidgetForPlayer(LP, W->TakeWidget(), /*ZOrder=*/100);
-			HUDWidgetInstance = W;
+            // --- Automatically assign OwningCar variable in the BP widget ---
+            if (AMyCar* MyCar = Cast<AMyCar>(GetPawn()))
+            {
+                if (UWidgetBlueprintGeneratedClass* WidgetBPClass = Cast<UWidgetBlueprintGeneratedClass>(W->GetClass()))
+                {
+                    if (FObjectPropertyBase* Prop = FindFProperty<FObjectPropertyBase>(WidgetBPClass, FName(TEXT("OwningCar"))))
+                    {
+                        Prop->SetObjectPropertyValue_InContainer(W, MyCar);
+                        UE_LOG(LogTemp, Log, TEXT("[RacePC] Assigned OwningCar = %s for %s"), *MyCar->GetName(), *GetName());
+                    }
+                    else
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("[RacePC] Could not find 'OwningCar' variable in %s"), *W->GetName());
+                    }
+                }
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[RacePC] No MyCar pawn found for %s"), *GetName());
+            }
 
-			// --- Adjust screen position depending on player ---
-			const int32 ControllerId = LP->GetControllerId();
-			if (ControllerId == 0)
-			{
-				W->SetAnchorsInViewport(FAnchors(0.5f, 0.f, 0.5f, 0.f));
-				W->SetAlignmentInViewport(FVector2D(0.5f, 0.f));
-				W->SetPositionInViewport(FVector2D(0.f, 16.f), false);
-			}
-			else
-			{
-				W->SetAnchorsInViewport(FAnchors(0.5f, 1.f, 0.5f, 1.f));
-				W->SetAlignmentInViewport(FVector2D(0.5f, 1.f));
-				W->SetPositionInViewport(FVector2D(0.f, -16.f), false);
-			}
+            // --- Add to correct split-screen region ---
+            GVC->AddViewportWidgetForPlayer(LP, W->TakeWidget(), /*ZOrder=*/100);
+            HUDWidgetInstance = W;
 
-			UE_LOG(LogTemp, Log, TEXT("[RacePC] HUD added for ControllerId=%d"), ControllerId);
-		},
-		0.10f, false);
+            // --- Adjust screen position depending on player ---
+            const int32 ControllerId = LP->GetControllerId();
+            if (ControllerId == 0)
+            {
+                W->SetAnchorsInViewport(FAnchors(0.5f, 0.f, 0.5f, 0.f));
+                W->SetAlignmentInViewport(FVector2D(0.5f, 0.f));
+                W->SetPositionInViewport(FVector2D(0.f, 16.f), false);
+            }
+            else
+            {
+                W->SetAnchorsInViewport(FAnchors(0.5f, 1.f, 0.5f, 1.f));
+                W->SetAlignmentInViewport(FVector2D(0.5f, 1.f));
+                W->SetPositionInViewport(FVector2D(0.f, -16.f), false);
+            }
+
+            UE_LOG(LogTemp, Log, TEXT("[RacePC] HUD added for ControllerId=%d"), ControllerId);
+        },
+        0.10f, false);
 }
 
 // ============================================================================
@@ -112,23 +129,23 @@ void ARacePlayerController::SpawnLocalHUD()
 // ============================================================================
 void ARacePlayerController::SetupInputComponent()
 {
-	Super::SetupInputComponent();
+    Super::SetupInputComponent();
 
-	if (!InputComponent)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[RacePC] No InputComponent on %s"), *GetName());
-		return;
-	}
+    if (!InputComponent)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[RacePC] No InputComponent on %s"), *GetName());
+        return;
+    }
 
-	const ULocalPlayer* LP = GetLocalPlayer();
-	const int32 ControllerId = LP ? LP->GetControllerId() : 0;
+    const ULocalPlayer* LP = GetLocalPlayer();
+    const int32 ControllerId = LP ? LP->GetControllerId() : 0;
 
-	// Only player 1 gets the restart hotkey
-	if (ControllerId == 0)
-	{
-		InputComponent->BindKey(EKeys::F12, IE_Pressed, this, &ARacePlayerController::HandleRestartHotkey);
-		UE_LOG(LogTemp, Log, TEXT("[RacePC] Bound F12 → RestartLevel (ControllerId=0)"));
-	}
+    // Only player 1 gets the restart hotkey
+    if (ControllerId == 0)
+    {
+        InputComponent->BindKey(EKeys::F12, IE_Pressed, this, &ARacePlayerController::HandleRestartHotkey);
+        UE_LOG(LogTemp, Log, TEXT("[RacePC] Bound F12 → RestartLevel (ControllerId=0)"));
+    }
 }
 
 // ============================================================================
@@ -136,9 +153,9 @@ void ARacePlayerController::SetupInputComponent()
 // ============================================================================
 void ARacePlayerController::HandleRestartHotkey()
 {
-	UWorld* World = GetWorld();
-	if (!World) return;
+    UWorld* World = GetWorld();
+    if (!World) return;
 
-	const FName LevelName(*World->GetName());
-	UGameplayStatics::OpenLevel(this, LevelName, true);
+    const FName LevelName(*World->GetName());
+    UGameplayStatics::OpenLevel(this, LevelName, true);
 }

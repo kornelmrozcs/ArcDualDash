@@ -5,6 +5,9 @@
 #include "WheeledVehiclePawn.h"
 #include "InputActionValue.h"
 #include "ChaosVehicleMovementComponent.h"
+
+class UBoxComponent;
+
 #include "MyCar.generated.h"
 
 // ---------------------------------------------------------
@@ -23,6 +26,13 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+
+	// --- Player Identity ---
+	UPROPERTY(BlueprintReadOnly, Category = "Race|Player")
+	int32 PlayerID = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Race|Player")
+	bool bIsAI = false;
 
 	// --- Input (P1) ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
@@ -44,15 +54,12 @@ public:
 	int32 Lap = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Race|Laps")
-	int32 CurrentCheckpoint = 0;
-
-	UFUNCTION(BlueprintCallable, Category = "Race|Laps")
-	void LapCheckpoint(int32 _CheckpointNo, int32 _MaxCheckpoint, bool _bStartFinishLine);
-
-	// --- Leaderboard tracking ---
-	UPROPERTY(BlueprintReadOnly, Category = "Race|Progress")
 	int32 CurrentCheckpointIndex = 0;
 
+	UFUNCTION(BlueprintCallable, Category = "Race|Laps")
+	void LapCheckpoint(int32 CheckpointNo, int32 MaxCheckpoint, bool bStartFinishLine);
+
+	// --- Leaderboard tracking ---
 	UPROPERTY(BlueprintReadOnly, Category = "Race|Progress")
 	float DistanceToNextCheckpoint = 0.f;
 
@@ -93,10 +100,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = "PowerUp")
 	float BoostDurationDefault = 2.5f;
 
-	// Allow Checkpoints to update our last checkpoint
 	void SetLastCheckpoint(AActor* CheckpointActor) { LastCheckpoint = CheckpointActor; }
 
-	// --- Local HUD events (each player gets their own)
+	// --- Local HUD events ---
 	UPROPERTY(BlueprintAssignable, Category = "HUD")
 	FOnLapChangedLocal OnLapChangedLocal;
 
@@ -135,13 +141,13 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Crash|Effects")
 	UParticleSystem* ExplosionFX = nullptr;
 
-	UPROPERTY(EditAnywhere, Category = "Crash|Settings", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, Category = "Crash|Settings")
 	float CrashForceThreshold = 80000.f;
 
-	UPROPERTY(EditAnywhere, Category = "Crash|Settings", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, Category = "Crash|Settings")
 	float CrashSpeedThreshold = 1800.f;
 
-	UPROPERTY(EditAnywhere, Category = "Crash|Settings", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, Category = "Crash|Settings")
 	float RespawnDelay = 2.0f;
 
 	UPROPERTY()
@@ -153,9 +159,7 @@ private:
 	FVector InitialSpawnLocation;
 	FRotator InitialSpawnRotation;
 
-	// ================================
-	// Respawn improvements / Ghost mode
-	// ================================
+	// --- Respawn / Ghost ---
 	UPROPERTY(EditAnywhere, Category = "Respawn")
 	float RespawnClearRadius = 220.f;
 
@@ -178,4 +182,8 @@ private:
 
 	void BeginGhost();
 	void EndGhost();
+
+	// Optional trigger for overlap detection
+	UPROPERTY(EditAnywhere, Category = "Crash|Components")
+	class UBoxComponent* CrashTrigger = nullptr;
 };
