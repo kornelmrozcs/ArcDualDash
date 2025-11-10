@@ -1,9 +1,9 @@
 ﻿#include "MyCar.h"
 #include "RaceGameState.h"
+#include "Kismet/GameplayStatics.h"
 #include "GameFramework/Controller.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
-#include "Kismet/GameplayStatics.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/BoxComponent.h"
@@ -128,6 +128,13 @@ void AMyCar::Tick(float DeltaSeconds)
 				DistanceToNextCheckpoint = FVector::Dist(GetActorLocation(), NextCheckpoint->GetActorLocation());
 			}
 		}
+	}
+
+	// --- Local timer broadcast for per-player HUD ---
+	if (IsPlayerControlled())
+	{
+		LocalElapsedTime += DeltaSeconds;
+		OnTimeUpdatedLocal.Broadcast(LocalElapsedTime);
 	}
 }
 
@@ -267,7 +274,7 @@ void AMyCar::LapCheckpoint(int32 _CheckpointNo, int32 _MaxCheckpoint, bool _bSta
 
 	UE_LOG(LogTemp, Warning, TEXT("Lap: %i Check Point: %i"), Lap, CurrentCheckpoint);
 
-	// HUD timer start + lap update
+	// --- Global GameState broadcast (shared timer) ---
 	if (ARaceGameState* GS = GetWorld()->GetGameState<ARaceGameState>())
 	{
 		if (_bStartFinishLine)
@@ -283,6 +290,10 @@ void AMyCar::LapCheckpoint(int32 _CheckpointNo, int32 _MaxCheckpoint, bool _bSta
 			}
 		}
 	}
+
+	// --- Local HUD update (per-player only) ---
+	const int32 TotalLaps = 3; // You can expose this later
+	OnLapChangedLocal.Broadcast(Lap, TotalLaps);
 }
 
 // ---------------------------------------------------------
@@ -363,7 +374,7 @@ void AMyCar::OnCrashTriggerOverlap(UPrimitiveComponent* OverlappedComp, AActor* 
 	float Speed = 0.f;
 	if (const auto* Move = Cast<UChaosWheeledVehicleMovementComponent>(GetVehicleMovementComponent()))
 	{
-		Speed = FMath::Abs(Move->GetForwardSpeed()); // cm/s (can be negative in reverse)
+		Speed = FMath::Abs(Move->GetForwardSpeed()); // cm/s
 	}
 	else if (USkeletalMeshComponent* CarMesh = GetMesh())
 	{
@@ -422,23 +433,19 @@ void AMyCar::RespawnCar()
 		BaseRot = LastCheckpoint->GetActorRotation();
 	}
 
-	// Lift slightly to guarantee it's above the track surface
 	BaseLoc.Z += 100.f;
 
 	// Apply per-player lane offset
-	const int32 Slot = GetRespawnSlot();          // 0..3
+	const int32 Slot = GetRespawnSlot();
 	const FVector Right = BaseRot.RotateVector(FVector::RightVector);
-	const FVector SlotOffset = Right * ((Slot - 0.5f) * LaneOffset * 0.9f); // center around line
+	const FVector SlotOffset = Right * ((Slot - 0.5f) * LaneOffset * 0.9f);
 	BaseLoc += SlotOffset;
 
-	// Find a nearby clear spot
 	FVector ChosenLoc = BaseLoc;
 	FindSafeRespawnSpot(BaseLoc, BaseRot, ChosenLoc);
 
-	// Teleport
 	SetActorLocationAndRotation(ChosenLoc, BaseRot, false, nullptr, ETeleportType::TeleportPhysics);
 
-	// Reset physics and add a small forward nudge
 	if (USkeletalMeshComponent* CarMesh = GetMesh())
 	{
 		CarMesh->SetPhysicsLinearVelocity(BaseRot.Vector() * ForwardNudgeOnRespawn);
@@ -446,12 +453,10 @@ void AMyCar::RespawnCar()
 		CarMesh->WakeAllRigidBodies();
 	}
 
-	// Re-enable actor
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
 	SetActorTickEnabled(true);
 
-	// Short ghost window so cars can separate
 	BeginGhost();
 
 	bIsCrashed = false;
@@ -460,7 +465,6 @@ void AMyCar::RespawnCar()
 
 int32 AMyCar::GetRespawnSlot() const
 {
-	// Prefer controller id if local MP; otherwise stable hash
 	if (const APawn* P = Cast<APawn>(this))
 	{
 		if (const APlayerController* PC = Cast<APlayerController>(P->GetController()))
@@ -469,7 +473,7 @@ int32 AMyCar::GetRespawnSlot() const
 				return FMath::Clamp(LP->GetControllerId(), 0, 3);
 		}
 	}
-	return (GetUniqueID() % 4); // fallback for AI/networked cars
+	return (GetUniqueID() % 4);
 }
 
 bool AMyCar::FindSafeRespawnSpot(const FVector& BaseLoc, const FRotator& BaseRot, FVector& OutLoc) const
@@ -477,29 +481,25 @@ bool AMyCar::FindSafeRespawnSpot(const FVector& BaseLoc, const FRotator& BaseRot
 	UWorld* World = GetWorld();
 	if (!World) { OutLoc = BaseLoc; return false; }
 
-	// Candidate offsets: forward steps then lateral steps
 	TArray<FVector> Offsets;
 	const FVector Fwd = BaseRot.RotateVector(FVector::ForwardVector);
 	const FVector Right = BaseRot.RotateVector(FVector::RightVector);
 
-	// forward probes
 	for (int32 i = 0; i < MaxRespawnSearchSteps; i++)
 		Offsets.Add(Fwd * (i * 200.f));
 
-	// lateral probes (left/right)
 	for (int32 i = 1; i <= MaxRespawnSearchSteps; i++)
 	{
 		Offsets.Add(Right * (i * LaneOffset));
 		Offsets.Add(Right * -(i * LaneOffset));
 	}
 
-	// collision query params
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(RespawnOverlap), false, this);
 	FCollisionShape Sphere = FCollisionShape::MakeSphere(RespawnClearRadius);
 
 	for (const FVector& O : Offsets)
 	{
-		const FVector Test = BaseLoc + O + FVector(0, 0, 10); // small lift
+		const FVector Test = BaseLoc + O + FVector(0, 0, 10);
 		bool bHit = World->OverlapBlockingTestByChannel(
 			Test, FQuat::Identity, ECC_Pawn, Sphere, Params);
 
@@ -510,7 +510,7 @@ bool AMyCar::FindSafeRespawnSpot(const FVector& BaseLoc, const FRotator& BaseRot
 		}
 	}
 
-	OutLoc = BaseLoc; // fallback
+	OutLoc = BaseLoc;
 	return false;
 }
 
@@ -525,8 +525,6 @@ void AMyCar::BeginGhost()
 	if (USkeletalMeshComponent* CarMesh = GetMesh())
 	{
 		CarMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-		// If you use a custom Vehicle channel, ignore it here too.
-		// CarMesh->SetCollisionResponseToChannel(ECC_Vehicle, ECR_Ignore);
 	}
 
 	TArray<AActor*> Cars;
@@ -549,10 +547,7 @@ void AMyCar::EndGhost()
 	if (USkeletalMeshComponent* CarMesh = GetMesh())
 	{
 		CarMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-		// If you ignored ECC_Vehicle above, restore it:
-		// CarMesh->SetCollisionResponseToChannel(ECC_Vehicle, ECR_Block);
 
-		// Stop ignoring others when moving
 		TArray<AActor*> Cars;
 		UGameplayStatics::GetAllActorsOfClass(GetWorld(), AMyCar::StaticClass(), Cars);
 		for (AActor* A : Cars)

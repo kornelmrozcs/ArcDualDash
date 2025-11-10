@@ -36,7 +36,7 @@ void ARaceGameState::BeginPlay()
         LeaderboardTimerHandle,
         this,
         &ARaceGameState::UpdateLeaderboard,
-        0.25f, // update 4x per second for smoother results
+        0.5f, // update 4x per second for smoother results
         true
     );
 }
